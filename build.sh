@@ -6,4 +6,3 @@ fi
 cd build
 cmake ..
 make
-

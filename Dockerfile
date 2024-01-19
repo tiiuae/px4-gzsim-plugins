@@ -1,6 +1,6 @@
 FROM ubuntu:22.04 AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive 
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -y \
     && apt install -y \
@@ -32,5 +32,5 @@ RUN ./build.sh
 FROM busybox
 
 WORKDIR /artifacts
-COPY --from=builder /px4-plugins/build/*.deb /artifacts
+COPY --from=builder /px4-plugins/build/*.so /artifacts
 
