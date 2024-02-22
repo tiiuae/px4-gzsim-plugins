@@ -1,0 +1,11 @@
+syntax = "proto2";
+
+package gz.msgs;
+
+message CollisionObject
+{
+    required string object = 1;
+    required string device_name = 2;
+    required int32 sequence_id = 3;
+    optional int32 threshold = 4 [default = 255];
+}
