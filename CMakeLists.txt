@@ -9,17 +9,16 @@ find_package(gz-cmake3 REQUIRED)
 find_package(gz-plugin2 REQUIRED COMPONENTS register)
 set(GZ_PLUGIN_VER ${gz-plugin2_VERSION_MAJOR})
 
-set(GAZEBO_VERSION 7)
-find_package(gz-sim7 REQUIRED)
-find_package(gz-msgs9)
-find_package(gz-sensors7 REQUIRED)
-if(gz-msgs9_FOUND)
+set(GAZEBO_VERSION 8)
+find_package(gz-sim8 REQUIRED)
+find_package(gz-msgs10)
+find_package(gz-sensors8 REQUIRED)
+if(gz-msgs10_FOUND)
+  set(GZ_MSG_VER 10)
+  set(Protobuf_IMPORT_DIRS ${gz-msgs10_INCLUDE_DIRS})
+else()
   set(GZ_MSG_VER 9)
   set(Protobuf_IMPORT_DIRS ${gz-msgs9_INCLUDE_DIRS})
-else()
-  set(GZ_MSG_VER 8)
-  find_package(gz-msgs8 REQUIRED)
-  set(Protobuf_IMPORT_DIRS ${gz-msgs8_INCLUDE_DIRS})
 endif()
 
 find_package(MAVLink)
@@ -40,7 +39,7 @@ target_link_libraries(mavlink_sitl_gazebosim
   PRIVATE ${Boost_LIBRARIES}
   PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
   PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
-  PRIVATE gz-sensors7::gz-sensors7
+  PRIVATE gz-sensors8::gz-sensors8
 )
 
 include(GNUInstallDirs)
