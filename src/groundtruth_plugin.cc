@@ -18,7 +18,6 @@
 #include "groundtruth_plugin.hh"
 
 #include <gz/msgs/pose.pb.h>
-#include <gz/msgs/pose_v.pb.h>
 #include <gz/msgs/time.pb.h>
 
 #include <stack>
@@ -33,7 +32,6 @@
 #include <gz/common/Profiler.hh>
 #include <gz/math/Pose3.hh>
 #include <gz/plugin/Register.hh>
-#include <gz/transport/Node.hh>
 
 #include "gz/sim/Util.hh"
 #include "gz/sim/components/CanonicalLink.hh"
@@ -50,132 +48,13 @@
 #include "gz/sim/components/Sensor.hh"
 #include "gz/sim/components/Visual.hh"
 #include "gz/sim/Conversions.hh"
-#include "gz/sim/Model.hh"
 
 using namespace gz;
 using namespace sim;
 using namespace systems;
 
-/// \brief Private data class for PosePublisher
-class gz::sim::systems::PosePublisherPrivate
-{
-  /// \brief Initializes internal caches for entities whose poses are to be
-  /// published and their names
-  /// \param[in] _ecm Immutable reference to the entity component manager
-  public: void InitializeEntitiesToPublish(const EntityComponentManager &_ecm);
-
-  /// \brief Helper function to collect entity pose data
-  /// \param[in] _ecm Immutable reference to the entity component manager
-  /// \param[out] _poses Pose vector to be filled
-  /// \param[in] _static True to fill only static transforms,
-  /// false to fill only dynamic transforms
-  public: void FillPoses(const EntityComponentManager &_ecm,
-      std::vector<std::pair<Entity, math::Pose3d>> &_poses,
-      bool _static);
-
-  /// \brief Publishes poses collected by FillPoses with the provided time
-  /// stamp.
-  /// \param[in] _poses Pose to publish
-  /// \param[in] _stampMsg Time stamp associated with published poses
-  /// \param[in] _publisher Publisher to publish the message
-  public: void PublishPoses(
-      std::vector<std::pair<Entity, math::Pose3d>> &_poses,
-      const msgs::Time &_stampMsg,
-      transport::Node::Publisher &_publisher);
-
-  /// \brief Gazebo communication node.
-  public: transport::Node node;
-
-  /// \brief publisher for pose data
-  public: transport::Node::Publisher posePub;
-
-  /// \brief True to publish static transforms to a separate topic
-  public: bool staticPosePublisher = false;
-
-  /// \brief publisher for pose data
-  public: transport::Node::Publisher poseStaticPub;
-
-  /// \brief Model interface
-  public: Model model{kNullEntity};
-
-  /// \brief True to publish link pose
-  public: bool publishLinkPose = true;
-
-  /// \brief True to publish visual pose
-  public: bool publishVisualPose = false;
-
-  /// \brief True to publish collision pose
-  public: bool publishCollisionPose = false;
-
-  /// \brief True to publish sensor pose
-  public: bool publishSensorPose = false;
-
-  /// \brief True to publish nested model pose
-  public: bool publishNestedModelPose = false;
-
-  /// \brief True to publish model pose
-  public: bool publishModelPose = false;
-
-  /// \brief Frequency of pose publications in Hz. A negative frequency
-  /// publishes as fast as possible (i.e, at the rate of the simulation step)
-  public: double updateFrequency = -1;
-
-  /// \brief Last time poses were published.
-  public: std::chrono::steady_clock::duration lastPosePubTime{0};
-
-  /// \brief Last time static poses were published.
-  public: std::chrono::steady_clock::duration lastStaticPosePubTime{0};
-
-  /// \brief Update period in nanoseconds calculated from the update_frequency
-  /// parameter
-  public: std::chrono::steady_clock::duration updatePeriod{0};
-
-  /// \brief Update period in nanoseconds calculated from the
-  /// static_update_frequency parameter
-  public: std::chrono::steady_clock::duration staticUpdatePeriod{0};
-
-  /// \brief Cache of entities, their frame names and their child frame names.
-  /// The key is the entity whose pose is to be published.
-  /// The frame name is the scoped name of the parent entity.
-  /// The child frame name is the scoped name of the entity (the key)
-  public: std::unordered_map<Entity, std::pair<std::string, std::string>>
-              entitiesToPublish;
-
-  /// \brief Entities with pose that can change over time, i.e. links connected
-  /// by joints
-  public: std::unordered_set<Entity> dynamicEntities;
-
-  /// \brief A vector that contains the entities and their poses. This could
-  /// easily be a temporary, but having it as a member variable improves
-  /// performance by avoiding memory allocation
-  public: std::vector<std::pair<Entity, math::Pose3d>> poses;
-
-  /// \brief A vector that contains the entities and poses that are static.
-  /// This could easily be a temporary, but having it as a member variable
-  /// improves performance by avoiding memory allocation
-  public: std::vector<std::pair<Entity, math::Pose3d>> staticPoses;
-
-  /// \brief A variable that gets populated with poses. This also here as a
-  /// member variable to avoid repeated memory allocations and improve
-  /// performance.
-  public: msgs::Pose poseMsg;
-
-  /// \brief A variable that gets populated with poses. This also here as a
-  /// member variable to avoid repeated memory allocations and improve
-  /// performance.
-  public: msgs::Pose_V poseVMsg;
-
-  /// \brief True to publish a vector of poses. False to publish individual pose
-  /// msgs.
-  public: bool usePoseV = false;
-
-  /// \brief Whether cache variables have been initialized
-  public: bool initialized{false};
-};
-
 //////////////////////////////////////////////////
 PosePublisher::PosePublisher()
-  : dataPtr(std::make_unique<PosePublisherPrivate>())
 {
 }
 
@@ -185,9 +64,9 @@ void PosePublisher::Configure(const Entity &_entity,
                               EntityComponentManager &_ecm,
                               EventManager &/*_eventMgr*/)
 {
-  this->dataPtr->model = Model(_entity);
+  model = Model(_entity);
 
-  if (!this->dataPtr->model.Valid(_ecm))
+  if (!model.Valid(_ecm))
   {
     gzerr << "PosePublisher plugin should be attached to a model entity. "
       << "Failed to initialize." << std::endl;
@@ -195,45 +74,45 @@ void PosePublisher::Configure(const Entity &_entity,
   }
 
   // parse optional params
-  this->dataPtr->publishLinkPose = _sdf->Get<bool>("publish_link_pose",
-      this->dataPtr->publishLinkPose).first;
+  publishLinkPose = _sdf->Get<bool>("publish_link_pose",
+      publishLinkPose).first;
 
-  this->dataPtr->publishNestedModelPose =
+  publishNestedModelPose =
     _sdf->Get<bool>("publish_nested_model_pose",
-        this->dataPtr->publishNestedModelPose).first;
+        publishNestedModelPose).first;
 
   // for backward compatibility, publish_model_pose will be set to the
   // same value as publish_nested_model_pose if it is not specified.
-  this->dataPtr->publishModelPose =
+  publishModelPose =
     _sdf->Get<bool>("publish_model_pose",
-        this->dataPtr->publishNestedModelPose).first;
+        publishNestedModelPose).first;
 
-  this->dataPtr->publishVisualPose =
+  publishVisualPose =
     _sdf->Get<bool>("publish_visual_pose",
-        this->dataPtr->publishVisualPose).first;
+        publishVisualPose).first;
 
-  this->dataPtr->publishCollisionPose =
+  publishCollisionPose =
     _sdf->Get<bool>("publish_collision_pose",
-        this->dataPtr->publishCollisionPose).first;
+        publishCollisionPose).first;
 
-  this->dataPtr->publishSensorPose =
+  publishSensorPose =
     _sdf->Get<bool>("publish_sensor_pose",
-        this->dataPtr->publishSensorPose).first;
+        publishSensorPose).first;
 
   double updateFrequency = _sdf->Get<double>("update_frequency", -1).first;
 
   if (updateFrequency > 0)
   {
     std::chrono::duration<double> period{1 / updateFrequency};
-    this->dataPtr->updatePeriod =
+    updatePeriod =
         std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
   }
 
-  this->dataPtr->staticPosePublisher =
+  staticPosePublisher =
     _sdf->Get<bool>("static_publisher",
-        this->dataPtr->staticPosePublisher).first;
+        staticPosePublisher).first;
 
-  if (this->dataPtr->staticPosePublisher)
+  if (staticPosePublisher)
   {
     // update rate for static transforms. Default to same as <update_frequency>
     double staticPoseUpdateFrequency =
@@ -242,46 +121,46 @@ void PosePublisher::Configure(const Entity &_entity,
     if (staticPoseUpdateFrequency > 0)
     {
       std::chrono::duration<double> period{1 / staticPoseUpdateFrequency};
-      this->dataPtr->staticUpdatePeriod =
+      staticUpdatePeriod =
           std::chrono::duration_cast<std::chrono::steady_clock::duration>(
           period);
     }
   }
 
   // create publishers
-  this->dataPtr->usePoseV =
-    _sdf->Get<bool>("use_pose_vector_msg", this->dataPtr->usePoseV).first;
+  usePoseV =
+    _sdf->Get<bool>("use_pose_vector_msg", usePoseV).first;
 
-  std::string poseTopic = scopedName(_entity, _ecm) + "/pose";
+  std::string poseTopic = scopedName(_entity, _ecm) + "/pose_custom";
   poseTopic = transport::TopicUtils::AsValidTopic(poseTopic);
   if (poseTopic.empty())
   {
-    poseTopic = "/pose";
+    poseTopic = "/pose_custom";
     gzerr << "Empty pose topic generated for pose_publisher system. "
            << "Setting to " << poseTopic << std::endl;
   }
   std::string staticPoseTopic = poseTopic + "_static";
 
-  if (this->dataPtr->usePoseV)
+  if (usePoseV)
   {
-    this->dataPtr->posePub =
-      this->dataPtr->node.Advertise<msgs::Pose_V>(poseTopic);
+    posePub =
+      node.Advertise<msgs::Pose_V>(poseTopic);
 
-    if (this->dataPtr->staticPosePublisher)
+    if (staticPosePublisher)
     {
-      this->dataPtr->poseStaticPub =
-          this->dataPtr->node.Advertise<msgs::Pose_V>(
+      poseStaticPub =
+          node.Advertise<msgs::Pose_V>(
           staticPoseTopic);
     }
   }
   else
   {
-    this->dataPtr->posePub =
-      this->dataPtr->node.Advertise<msgs::Pose>(poseTopic);
-    if (this->dataPtr->staticPosePublisher)
+    posePub =
+      node.Advertise<msgs::Pose>(poseTopic);
+    if (staticPosePublisher)
     {
-      this->dataPtr->poseStaticPub =
-          this->dataPtr->node.Advertise<msgs::Pose>(
+      poseStaticPub =
+          node.Advertise<msgs::Pose>(
           staticPoseTopic);
     }
   }
@@ -306,21 +185,21 @@ void PosePublisher::PostUpdate(const UpdateInfo &_info,
     return;
 
   bool publish = true;
-  auto diff = _info.simTime - this->dataPtr->lastPosePubTime;
+  auto diff = _info.simTime - lastPosePubTime;
   // If the diff is positive and it's less than the update period, we skip
   // publication. If the diff is negative, then time has gone backward, we go
   // ahead publish and allow the time to be reset
   if ((diff > std::chrono::steady_clock::duration::zero()) &&
-      (diff < this->dataPtr->updatePeriod))
+      (diff < updatePeriod))
   {
     publish = false;
   }
 
   bool publishStatic = true;
-  auto staticDiff = _info.simTime - this->dataPtr->lastStaticPosePubTime;
-  if (!this->dataPtr->staticPosePublisher ||
+  auto staticDiff = _info.simTime - lastStaticPosePubTime;
+  if (!staticPosePublisher ||
       ((staticDiff > std::chrono::steady_clock::duration::zero()) &&
-      (staticDiff < this->dataPtr->staticUpdatePeriod)))
+      (staticDiff < staticUpdatePeriod)))
   {
     publishStatic = false;
   }
@@ -328,48 +207,48 @@ void PosePublisher::PostUpdate(const UpdateInfo &_info,
   if (!publish && !publishStatic)
     return;
 
-  if (!this->dataPtr->initialized)
+  if (!initialized)
   {
-    this->dataPtr->InitializeEntitiesToPublish(_ecm);
-    this->dataPtr->initialized = true;
+    InitializeEntitiesToPublish(_ecm);
+    initialized = true;
   }
 
 
   // if static transforms are published through a different topic
-  if (this->dataPtr->staticPosePublisher)
+  if (staticPosePublisher)
   {
     if (publishStatic)
     {
-      this->dataPtr->staticPoses.clear();
-      this->dataPtr->FillPoses(_ecm, this->dataPtr->staticPoses, true);
-      this->dataPtr->PublishPoses(this->dataPtr->staticPoses,
-          convert<msgs::Time>(_info.simTime), this->dataPtr->poseStaticPub);
-      this->dataPtr->lastStaticPosePubTime = _info.simTime;
+      staticPoses.clear();
+      FillPoses(_ecm, staticPoses, true);
+      PublishPoses(staticPoses,
+          convert<msgs::Time>(_info.simTime), poseStaticPub);
+      lastStaticPosePubTime = _info.simTime;
     }
 
     if (publish)
     {
-      this->dataPtr->poses.clear();
-      this->dataPtr->FillPoses(_ecm, this->dataPtr->poses, false);
-      this->dataPtr->PublishPoses(this->dataPtr->poses,
-          convert<msgs::Time>(_info.simTime), this->dataPtr->posePub);
-      this->dataPtr->lastPosePubTime = _info.simTime;
+      poses.clear();
+      FillPoses(_ecm, poses, false);
+      PublishPoses(poses,
+          convert<msgs::Time>(_info.simTime), posePub);
+      lastPosePubTime = _info.simTime;
     }
   }
   // publish all transforms to the same topic
   else if (publish)
   {
-    this->dataPtr->poses.clear();
-    this->dataPtr->FillPoses(_ecm, this->dataPtr->poses, true);
-    this->dataPtr->FillPoses(_ecm, this->dataPtr->poses, false);
-    this->dataPtr->PublishPoses(this->dataPtr->poses,
-        convert<msgs::Time>(_info.simTime), this->dataPtr->posePub);
-    this->dataPtr->lastPosePubTime = _info.simTime;
+    poses.clear();
+    FillPoses(_ecm, poses, true);
+    FillPoses(_ecm, poses, false);
+    PublishPoses(poses,
+        convert<msgs::Time>(_info.simTime), posePub);
+    lastPosePubTime = _info.simTime;
   }
 }
 
 //////////////////////////////////////////////////
-void PosePublisherPrivate::InitializeEntitiesToPublish(
+void PosePublisher::InitializeEntitiesToPublish(
     const EntityComponentManager &_ecm)
 {
   std::stack<Entity> toCheck;
@@ -504,7 +383,7 @@ void PosePublisherPrivate::InitializeEntitiesToPublish(
 }
 
 //////////////////////////////////////////////////
-void PosePublisherPrivate::FillPoses(const EntityComponentManager &_ecm,
+void PosePublisher::FillPoses(const EntityComponentManager &_ecm,
     std::vector<std::pair<Entity, math::Pose3d>> &_poses, bool _static)
 {
   GZ_PROFILE("PosePublisher::FillPose");
@@ -524,7 +403,7 @@ void PosePublisherPrivate::FillPoses(const EntityComponentManager &_ecm,
 }
 
 //////////////////////////////////////////////////
-void PosePublisherPrivate::PublishPoses(
+void PosePublisher::PublishPoses(
     std::vector<std::pair<Entity, math::Pose3d>> &_poses,
     const msgs::Time &_stampMsg,
     transport::Node::Publisher &_publisher)
