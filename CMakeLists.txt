@@ -60,3 +60,10 @@ set_property(TARGET collision_plugin PROPERTY CXX_STANDARD 17)
 target_link_libraries(collision_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
 )
+
+add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cc)
+target_link_libraries(groundtruth_plugin
+        PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
+        PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
+        PRIVATE gz-msgs10::gz-msgs10
+)
