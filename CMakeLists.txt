@@ -61,7 +61,7 @@ target_link_libraries(collision_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
 )
 
-add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cc)
+add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp)
 target_link_libraries(groundtruth_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
         PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
