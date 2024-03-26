@@ -7,6 +7,7 @@
 #include "gz/sim/Model.hh"
 #include "common.h"
 #include <gz/msgs/pose_v.pb.h>
+#include <gz/msgs/navsat.pb.h>
 
 namespace gz {
     namespace sim {
@@ -57,6 +58,7 @@ namespace gz {
 
                     /// \brief publisher for pose data
                     transport::Node::Publisher posePub;
+                    transport::Node::Publisher navPub;
 
                     /// \brief Model interface
                     Model model{kNullEntity};
@@ -76,6 +78,7 @@ namespace gz {
                     /// member variable to avoid repeated memory allocations and improve
                     /// performance.
                     msgs::Pose poseMsg;
+                    msgs::NavSat navMsg;
 
                     /// \brief Model name
                     std::string model_name_{};
