@@ -6,8 +6,7 @@
 #include <gz/transport/Node.hh>
 #include "gz/sim/Model.hh"
 #include "common.h"
-#include <gz/msgs/pose_v.pb.h>
-#include <gz/msgs/navsat.pb.h>
+#include "Groundtruth.pb.h"
 
 namespace gz {
     namespace sim {
@@ -56,8 +55,7 @@ namespace gz {
                     /// \brief Gazebo communication node.
                     transport::Node node;
 
-                    /// \brief publisher for pose data
-                    transport::Node::Publisher posePub;
+                    /// \brief publisher for groundtruth data
                     transport::Node::Publisher navPub;
 
                     /// \brief Model interface
@@ -73,12 +71,6 @@ namespace gz {
                     /// \brief Update period in nanoseconds calculated from the update_frequency
                     /// parameter
                     std::chrono::steady_clock::duration updatePeriod{0};
-
-                    /// \brief A variable that gets populated with poses. This also here as a
-                    /// member variable to avoid repeated memory allocations and improve
-                    /// performance.
-                    msgs::Pose poseMsg;
-                    msgs::NavSat navMsg;
 
                     /// \brief Model name
                     std::string model_name_{};
@@ -97,3 +89,7 @@ namespace gz {
         }
     }
 }
+
+#ifdef DEBUG
+void callback(gz::msgs::Groundtruth const& msg);
+#endif

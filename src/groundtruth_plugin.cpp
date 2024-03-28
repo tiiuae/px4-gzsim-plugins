@@ -1,6 +1,5 @@
 #include "groundtruth_plugin.h"
 
-#include <gz/msgs/pose.pb.h>
 #include <gz/msgs/time.pb.h>
 
 #include <string>
@@ -12,11 +11,9 @@
 #include <gz/plugin/Register.hh>
 
 #include "gz/sim/Util.hh"
-#include "gz/sim/components/Name.hh"
 #include "gz/sim/components/ParentEntity.hh"
 #include "gz/sim/components/Pose.hh"
 #include "gz/sim/Conversions.hh"
-#include "gz/sim/Util.hh"
 
 using namespace gz;
 using namespace sim;
@@ -48,7 +45,7 @@ void GroundtruthPlugin::Configure(const Entity &_entity,
     }
 
     // create publisher
-    std::string poseTopic = scopedName(_entity, _ecm) + "/groundtruth";
+    std::string poseTopic = model_name_ + "/groundtruth";
     poseTopic = transport::TopicUtils::AsValidTopic(poseTopic);
     if (poseTopic.empty()) {
         poseTopic = "/groundtruth";
@@ -56,7 +53,6 @@ void GroundtruthPlugin::Configure(const Entity &_entity,
               << "Setting to " << poseTopic << std::endl;
     }
 
-    auto world_entiry = gz::sim::worldEntity(_ecm);
     auto world_has_origin{false};
 
     // Use environment variables if set for home position.
@@ -96,8 +92,12 @@ void GroundtruthPlugin::Configure(const Entity &_entity,
         alt_home_ = _sdf->Get<double>("homeAltitude", alt_home_).first;
     }
 
-    posePub = node.Advertise<msgs::Pose>(poseTopic);
-    navPub = node.Advertise<msgs::NavSat>(poseTopic + "/gps");
+    navPub = node.Advertise<msgs::Groundtruth>(poseTopic);
+
+#ifdef DEBUG
+    node.Subscribe(poseTopic, callback);
+    gzwarn << "DEBUG MODE. Echo from " << poseTopic << std::endl;
+#endif
 }
 
 //////////////////////////////////////////////////
@@ -136,62 +136,42 @@ void GroundtruthPlugin::PublishPose(const EntityComponentManager &_ecm,
     GZ_PROFILE("PosePublisher::PublishPoses");
 
     // publish poses
-    msgs::Pose *msg{nullptr};
-    msgs::NavSat *n_Msg{nullptr};
-
     auto pose = _ecm.Component<components::Pose>(model.Entity());
     if (!pose)
         return;
 
-    this->poseMsg.Clear();
-    msg = &this->poseMsg;
-    navMsg.Clear();
-    n_Msg = &navMsg;
-
-
     // fill pose msg
     // pose is the transform from parent_name_ to model_name_
-    GZ_ASSERT(msg != nullptr, "Pose msg is null");
-    GZ_ASSERT(n_Msg != nullptr, "Navigation msg is null");
-    auto header = msg->mutable_header();
-
-    auto n_header = n_Msg->mutable_header();
-
-    header->mutable_stamp()->CopyFrom(_stampMsg);
-    n_header->mutable_stamp()->CopyFrom(_stampMsg);
     const math::Pose3d &transform = pose->Data();
-    auto childFrame = header->add_data();
-    childFrame->set_key("model_name");
-    childFrame->add_value(model_name_);
-
     auto pos_W_I = transform.Pos();
     auto att_W_I = transform.Rot();
-
-    auto pos = sphericalCoordinates(model.Entity(), _ecm).value();
 
     // reproject position into geographic coordinates
     auto latlon_gt = reproject(pos_W_I, lat_home_, lon_home_, alt_home_);
 
 //  TODO: Velocity
-
 //    auto one = relativeVel(model.Entity(), _ecm);
 //    gzwarn << "Velocity: " << one << std::endl;
-//    gz::sim::worldPose(model.Entity());
-//    gzwarn << "-Raw Pos(): " << transform.Pos() << std::endl;
-//    gzwarn << "-Ready: " << latlon_gt.first << " " << latlon_gt.second << " " << pos_W_I.Z() + alt_home_ << " "
-//           << att_W_I.W() << " " << att_W_I.X() << " " << att_W_I.Y() << " " << att_W_I.Z() << std::endl;
-//    gzwarn << "-Converted: " << latlon_gt.first * 180 / M_PI << " " << latlon_gt.second * 180 / M_PI << std::endl;
-    // set pose
-    msg->set_name(model_name_);
-    msgs::Set(msg, transform);
 
-    n_Msg->set_latitude_deg(latlon_gt.first * 180 / M_PI);
-    n_Msg->set_longitude_deg(latlon_gt.second * 180 / M_PI);
-    n_Msg->set_altitude(pos_W_I.Z() + alt_home_);
+    // set pose
+    static uint32_t i{0};
+    msgs::Groundtruth gtMsg;
+    gtMsg.set_seq_num(i++);
+    gtMsg.set_time_usec(_stampMsg.sec());
+    gtMsg.set_latitude_rad(latlon_gt.first);
+    gtMsg.set_longitude_rad(latlon_gt.second);
+    gtMsg.set_altitude_m(pos_W_I.Z() + alt_home_);
+    gtMsg.set_velocity_east(0);
+    gtMsg.set_velocity_north(0);
+    gtMsg.set_velocity_up(0);
+    gtMsg.set_attitude_q_w(att_W_I.W());
+    gtMsg.set_attitude_q_x(att_W_I.X());
+    gtMsg.set_attitude_q_y(att_W_I.X());
+    gtMsg.set_attitude_q_z(att_W_I.Z());
+    gtMsg.set_frame_id(model_name_);
 
     // publish individual pose msgs
-    posePub.Publish(this->poseMsg);
-    navPub.Publish(navMsg);
+    navPub.Publish(gtMsg);
 }
 
 GZ_ADD_PLUGIN(GroundtruthPlugin,
@@ -201,3 +181,22 @@ GZ_ADD_PLUGIN(GroundtruthPlugin,
 
 GZ_ADD_PLUGIN_ALIAS(GroundtruthPlugin,
                     "gz::sim::systems::GroundtruthPlugin")
+
+#ifdef DEBUG
+void callback(gz::msgs::Groundtruth const& msg){
+    gzwarn <<
+    "seq_num(): " << msg.seq_num() << std::endl <<
+    "time_usec(): " << msg.time_usec() << std::endl <<
+    "latitude_rad(): " << msg.latitude_rad() << " " << msg.latitude_rad() * 180 / M_PI << std::endl <<
+    "longitude_rad(): " << msg.longitude_rad() << " " << msg.longitude_rad() * 180 / M_PI << std::endl <<
+    "altitude_m(): " << msg.altitude_m() << std::endl <<
+    "velocity_east(): " << msg.velocity_east() << std::endl <<
+    "velocity_north(): " << msg.velocity_north() << std::endl <<
+    "velocity_up(): " << msg.velocity_up() << std::endl <<
+    "attitude_q_w(): " << msg.attitude_q_w() << std::endl <<
+    "attitude_q_x(): " << msg.attitude_q_x() << std::endl <<
+    "attitude_q_y(): " << msg.attitude_q_y() << std::endl <<
+    "attitude_q_z(): " << msg.attitude_q_z() << std::endl <<
+    "frame_id(): " << msg.frame_id() << std::endl;
+}
+#endif

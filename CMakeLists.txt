@@ -10,9 +10,23 @@ find_package(gz-plugin2 REQUIRED COMPONENTS register)
 set(GZ_PLUGIN_VER ${gz-plugin2_VERSION_MAJOR})
 
 set(GAZEBO_VERSION 8)
-find_package(gz-sim8 REQUIRED)
+find_package(gz-sim8 8.2.0 REQUIRED)
+if(NOT ${gz-sim8_VERSION} EQUAL 8.2.0)
+  message(FATAL_ERROR "gz-sim8 must be version 8.2.0. You have ${gz-sim8_VERSION}")
+endif ()
 find_package(gz-msgs10)
+if(NOT ${gz-msgs10_VERSION} EQUAL 10.1.1)
+  message(FATAL_ERROR "gz-msgs10 must be version 10.1.1. You have ${gz-msgs10_VERSION}")
+endif ()
 find_package(gz-sensors8 REQUIRED)
+if(NOT ${gz-sensors8_VERSION} EQUAL 8.0.1)
+  message(FATAL_ERROR "gz-sensors8 must be version 8.0.1. You have ${gz-sensors8_VERSION}")
+endif ()
+find_package(gz-transport13 13.1.0 REQUIRED)
+if(NOT ${gz-transport13_VERSION} EQUAL 13.1.0)
+  message(FATAL_ERROR "gz-transport13 must be version 13.1.0. You have ${gz-transport13_VERSION}")
+endif ()
+
 if(gz-msgs10_FOUND)
   set(GZ_MSG_VER 10)
   set(Protobuf_IMPORT_DIRS ${gz-msgs10_INCLUDE_DIRS})
@@ -27,7 +41,10 @@ find_package(MAVLink)
 find_package(Protobuf REQUIRED)
 
 #Generate messages files for collision plugin
-PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS msgs/custom_message.proto)
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS msgs/CollisionObject.proto)
+
+#Generate messages files for groundtruth plugin
+PROTOBUF_GENERATE_CPP(GT_PROTO_SRCS GT_PROTO_HDRS msgs/Groundtruth.proto)
 
 include_directories(${CMAKE_BINARY_DIR})
 
@@ -61,9 +78,11 @@ target_link_libraries(collision_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
 )
 
-add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp)
+add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp ${GT_PROTO_SRCS})
 target_link_libraries(groundtruth_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
         PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
         PRIVATE gz-msgs10::gz-msgs10
 )
+# ln -s ./libgroundtruth_plugin.so /usr/lib/x86_64-linux-gnu/gz-sim-8/plugins
+# ln -s ./libcollision_plugin.so /usr/lib/x86_64-linux-gnu/gz-sim-8/plugins
