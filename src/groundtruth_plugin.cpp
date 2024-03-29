@@ -190,7 +190,7 @@ GZ_ADD_PLUGIN(GroundtruthPlugin,
               GroundtruthPlugin::ISystemPostUpdate)
 
 GZ_ADD_PLUGIN_ALIAS(GroundtruthPlugin,
-                    "gz::sim::systems::GroundtruthPlugin")
+                    "gz::GroundtruthPlugin")
 
 bool GroundtruthPlugin::responseCallback(const gz::msgs::StringMsg &, gz::msgs::Groundtruth &rep)
 {

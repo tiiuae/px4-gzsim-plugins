@@ -31,7 +31,7 @@ void CollisionPlugin::Load(const EntityComponentManager &_ecm,
         }
     }
 
-    if (_sdf->HasElement("updateRate")) { ;
+    if (_sdf->HasElement("updateRate")) {
         publish_rate_ = _sdf->GetElement("updateRate")->Get<int32_t>();
         gzmsg << "Publish rate set to " << publish_rate_ << std::endl;
     }

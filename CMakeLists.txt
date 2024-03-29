@@ -27,10 +27,17 @@ if(NOT ${gz-transport13_VERSION} EQUAL 13.1.0)
   message(FATAL_ERROR "gz-transport13 must be version 13.1.0. You have ${gz-transport13_VERSION}")
 endif ()
 
-find_library(GZ_CUSTOM_MSGS NAMES gz_custom_messages PATHS /usr/local/bin)
-if (NOT GZ_CUSTOM_MSGS)
-  message(FATAL_ERROR "Please install messages library from https://github.com/tiiuae/TASFMessages")
-endif ()
+include(FetchContent)
+message(STATUS "Download TASFMessages library")
+
+FetchContent_Declare(
+        TASFMessages
+        GIT_REPOSITORY "git@github.com:tiiuae/TASFMessages.git"
+        GIT_TAG main
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}/dependency/TASFMessages
+)
+FetchContent_Populate(TASFMessages)
+add_subdirectory(${tasfmessages_SOURCE_DIR})
 
 if(gz-msgs10_FOUND)
   set(GZ_MSG_VER 10)
@@ -50,6 +57,7 @@ include_directories(${CMAKE_BINARY_DIR})
 include_directories(
   include
   ${Boost_INCLUDE_DIR}
+  ${tasfmessages_BINARY_DIR}
 #  ${MAVLINK_INCLUDE_DIRS}
 )
 
@@ -75,11 +83,11 @@ add_library(collision_plugin SHARED src/harmonic_collision.cpp)
 set_property(TARGET collision_plugin PROPERTY CXX_STANDARD 17)
 target_link_libraries(collision_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
-        PRIVATE ${GZ_CUSTOM_MSGS}
+        PRIVATE gz_custom_messages
 )
 
 add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp)
 target_link_libraries(groundtruth_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
-        PRIVATE ${GZ_CUSTOM_MSGS}
+        PRIVATE gz_custom_messages
 )
