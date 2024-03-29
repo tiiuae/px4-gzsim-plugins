@@ -4,7 +4,8 @@
 #include <gz/sim/config.hh>
 #include <gz/sim/System.hh>
 #include <gz/transport/Node.hh>
-#include "gz/sim/Model.hh"
+#include <gz/msgs.hh>
+#include <gz/sim/Model.hh>
 #include "common.h"
 #include "Groundtruth.pb.h"
 
@@ -48,8 +49,10 @@ namespace gz {
                     /// \brief Publishes pose with the provided time
                     /// stamp.
                     /// \param[in] _stampMsg Time stamp associated with published poses
-                    void PublishPose(const EntityComponentManager &_ecm,
+                    void fillPose(const EntityComponentManager &_ecm,
                                      const msgs::Time &_stampMsg);
+
+                    bool responseCallback(const gz::msgs::StringMsg &, gz::msgs::Groundtruth &rep);
 
                 private:
                     /// \brief Gazebo communication node.
@@ -72,6 +75,11 @@ namespace gz {
                     /// parameter
                     std::chrono::steady_clock::duration updatePeriod{0};
 
+                    /// \brief A variable that gets populated with poses. This also here as a
+                    /// member variable to avoid repeated memory allocations and improve
+                    /// performance.
+                    msgs::Groundtruth gtMsg;
+
                     /// \brief Model name
                     std::string model_name_{};
 
@@ -89,7 +97,3 @@ namespace gz {
         }
     }
 }
-
-#ifdef DEBUG
-void callback(gz::msgs::Groundtruth const& msg);
-#endif

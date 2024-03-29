@@ -14,6 +14,8 @@
 #include "gz/sim/components/ParentEntity.hh"
 #include "gz/sim/components/Pose.hh"
 #include "gz/sim/Conversions.hh"
+// Just in case for Advertise function
+// #include <gz/transport/AdvertiseOptions.hh>
 
 using namespace gz;
 using namespace sim;
@@ -21,6 +23,11 @@ using namespace systems;
 
 //////////////////////////////////////////////////
 GroundtruthPlugin::GroundtruthPlugin() {
+}
+
+namespace stash {
+/// \brief Service callback can't use any of class fields (pub/priv/prot). It can use only global variables.
+    static msgs::Groundtruth glob_gt_msg;
 }
 
 //////////////////////////////////////////////////
@@ -93,11 +100,11 @@ void GroundtruthPlugin::Configure(const Entity &_entity,
     }
 
     navPub = node.Advertise<msgs::Groundtruth>(poseTopic);
-
-#ifdef DEBUG
-    node.Subscribe(poseTopic, callback);
-    gzwarn << "DEBUG MODE. Echo from " << poseTopic << std::endl;
-#endif
+    auto resp = node.Advertise(poseTopic + "_req", &GroundtruthPlugin::responseCallback, {});
+    if (!resp)
+    {
+        gzwarn << "Error advertising service" << std::endl;
+    }
 }
 
 //////////////////////////////////////////////////
@@ -126,13 +133,15 @@ void GroundtruthPlugin::PostUpdate(const UpdateInfo &_info,
         return;
     }
 
-    PublishPose(_ecm, convert<msgs::Time>(_info.simTime));
+    fillPose(_ecm, convert<msgs::Time>(_info.simTime));
+    // publish individual pose msgs
+    navPub.Publish(gtMsg);
     lastPosePubTime = _info.simTime;
 }
 
 //////////////////////////////////////////////////
-void GroundtruthPlugin::PublishPose(const EntityComponentManager &_ecm,
-                                    const msgs::Time &_stampMsg) {
+void GroundtruthPlugin::fillPose(const EntityComponentManager &_ecm,
+                                 const msgs::Time &_stampMsg) {
     GZ_PROFILE("PosePublisher::PublishPoses");
 
     // publish poses
@@ -155,23 +164,24 @@ void GroundtruthPlugin::PublishPose(const EntityComponentManager &_ecm,
 
     // set pose
     static uint32_t i{0};
-    msgs::Groundtruth gtMsg;
-    gtMsg.set_seq_num(i++);
-    gtMsg.set_time_usec(_stampMsg.sec());
-    gtMsg.set_latitude_rad(latlon_gt.first);
-    gtMsg.set_longitude_rad(latlon_gt.second);
-    gtMsg.set_altitude_m(pos_W_I.Z() + alt_home_);
-    gtMsg.set_velocity_east(0);
-    gtMsg.set_velocity_north(0);
-    gtMsg.set_velocity_up(0);
-    gtMsg.set_attitude_q_w(att_W_I.W());
-    gtMsg.set_attitude_q_x(att_W_I.X());
-    gtMsg.set_attitude_q_y(att_W_I.X());
-    gtMsg.set_attitude_q_z(att_W_I.Z());
-    gtMsg.set_frame_id(model_name_);
+    msgs::Groundtruth *_gtMsg = &gtMsg;
+    _gtMsg->Clear();
+    _gtMsg->set_seq_num(i++);
+    _gtMsg->set_time_sec(_stampMsg.sec());
+    _gtMsg->set_time_nsec(_stampMsg.nsec());
+    _gtMsg->set_latitude_rad(latlon_gt.first);
+    _gtMsg->set_longitude_rad(latlon_gt.second);
+    _gtMsg->set_altitude_m(pos_W_I.Z() + alt_home_);
+    _gtMsg->set_velocity_east(0);
+    _gtMsg->set_velocity_north(0);
+    _gtMsg->set_velocity_up(0);
+    _gtMsg->set_attitude_q_w(att_W_I.W());
+    _gtMsg->set_attitude_q_x(att_W_I.X());
+    _gtMsg->set_attitude_q_y(att_W_I.X());
+    _gtMsg->set_attitude_q_z(att_W_I.Z());
+    _gtMsg->set_frame_id(model_name_);
 
-    // publish individual pose msgs
-    navPub.Publish(gtMsg);
+    stash::glob_gt_msg.CopyFrom(gtMsg);
 }
 
 GZ_ADD_PLUGIN(GroundtruthPlugin,
@@ -182,21 +192,10 @@ GZ_ADD_PLUGIN(GroundtruthPlugin,
 GZ_ADD_PLUGIN_ALIAS(GroundtruthPlugin,
                     "gz::sim::systems::GroundtruthPlugin")
 
-#ifdef DEBUG
-void callback(gz::msgs::Groundtruth const& msg){
-    gzwarn <<
-    "seq_num(): " << msg.seq_num() << std::endl <<
-    "time_usec(): " << msg.time_usec() << std::endl <<
-    "latitude_rad(): " << msg.latitude_rad() << " " << msg.latitude_rad() * 180 / M_PI << std::endl <<
-    "longitude_rad(): " << msg.longitude_rad() << " " << msg.longitude_rad() * 180 / M_PI << std::endl <<
-    "altitude_m(): " << msg.altitude_m() << std::endl <<
-    "velocity_east(): " << msg.velocity_east() << std::endl <<
-    "velocity_north(): " << msg.velocity_north() << std::endl <<
-    "velocity_up(): " << msg.velocity_up() << std::endl <<
-    "attitude_q_w(): " << msg.attitude_q_w() << std::endl <<
-    "attitude_q_x(): " << msg.attitude_q_x() << std::endl <<
-    "attitude_q_y(): " << msg.attitude_q_y() << std::endl <<
-    "attitude_q_z(): " << msg.attitude_q_z() << std::endl <<
-    "frame_id(): " << msg.frame_id() << std::endl;
+bool GroundtruthPlugin::responseCallback(const gz::msgs::StringMsg &, gz::msgs::Groundtruth &rep)
+{
+    rep.Clear();
+    rep.CopyFrom(stash::glob_gt_msg);
+
+    return true;
 }
-#endif
