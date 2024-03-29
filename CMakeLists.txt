@@ -45,12 +45,6 @@ find_package(MAVLink)
 
 find_package(Protobuf REQUIRED)
 
-#Generate messages files for collision plugin
-PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS msgs/CollisionObject.proto)
-
-#Generate messages files for groundtruth plugin
-PROTOBUF_GENERATE_CPP(GT_PROTO_SRCS GT_PROTO_HDRS msgs/Groundtruth.proto)
-
 include_directories(${CMAKE_BINARY_DIR})
 
 include_directories(
@@ -87,9 +81,5 @@ target_link_libraries(collision_plugin
 add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp)
 target_link_libraries(groundtruth_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
-        PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
-        PRIVATE gz-msgs10::gz-msgs10
         PRIVATE ${GZ_CUSTOM_MSGS}
 )
-# ln -s ./libgroundtruth_plugin.so /usr/lib/x86_64-linux-gnu/gz-sim-8/plugins
-# ln -s ./libcollision_plugin.so /usr/lib/x86_64-linux-gnu/gz-sim-8/plugins
