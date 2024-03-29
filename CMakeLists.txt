@@ -27,6 +27,11 @@ if(NOT ${gz-transport13_VERSION} EQUAL 13.1.0)
   message(FATAL_ERROR "gz-transport13 must be version 13.1.0. You have ${gz-transport13_VERSION}")
 endif ()
 
+find_library(GZ_CUSTOM_MSGS NAMES gz_custom_messages PATHS /usr/local/bin)
+if (NOT GZ_CUSTOM_MSGS)
+  message(FATAL_ERROR "Please install messages library from https://github.com/tiiuae/TASFMessages")
+endif ()
+
 if(gz-msgs10_FOUND)
   set(GZ_MSG_VER 10)
   set(Protobuf_IMPORT_DIRS ${gz-msgs10_INCLUDE_DIRS})
@@ -72,17 +77,19 @@ install(TARGETS
 set(CPACK_PACKAGE_CONTACT "Auterion")
 include(CPack)
 
-add_library(collision_plugin SHARED src/harmonic_collision.cpp ${PROTO_SRCS})
+add_library(collision_plugin SHARED src/harmonic_collision.cpp)
 set_property(TARGET collision_plugin PROPERTY CXX_STANDARD 17)
 target_link_libraries(collision_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
+        PRIVATE ${GZ_CUSTOM_MSGS}
 )
 
-add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp ${GT_PROTO_SRCS})
+add_library(groundtruth_plugin SHARED src/groundtruth_plugin.cpp)
 target_link_libraries(groundtruth_plugin
         PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
         PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
         PRIVATE gz-msgs10::gz-msgs10
+        PRIVATE ${GZ_CUSTOM_MSGS}
 )
 # ln -s ./libgroundtruth_plugin.so /usr/lib/x86_64-linux-gnu/gz-sim-8/plugins
 # ln -s ./libcollision_plugin.so /usr/lib/x86_64-linux-gnu/gz-sim-8/plugins
