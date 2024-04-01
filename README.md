@@ -35,3 +35,47 @@ make
 cpack -G DEB
 sudo dpkg -i *.deb
 ```
+
+### Tips
+For the [**_collision plugin_**](./src/harmonic_collision.cpp) a model must have
+1. Collision
+```
+<collision name='collision'>
+    <geometry>
+        <box>
+            <size>2.0 1.0 0.5</size>
+        </box>
+    </geometry>
+</collision>
+```
+ 2. Contact sensor
+ ```
+<sensor name='sensor_contact' type='contact'>
+    <contact>
+        <!--The name of the collision element from above-->
+        <collision>collision</collision>
+    </contact>
+</sensor>
+ ```
+3. Plugins 
+```
+<plugin filename="gz-sim-contact-system"
+        name="gz::sim::systems::Contact">
+</plugin>
+<plugin filename="collision_plugin"
+        name="gz::CollisionPlugin">
+    <!-- 1000 == 1 sec -->
+    <updateRate>1000</updateRate>
+</plugin>
+```
+
+For the [**_groundtruth plugin_**](./src/groundtruth_plugin.cpp) a model must have only plugin
+```
+<plugin filename="groundtruth_plugin"
+    name="gz::sim::systems::GroundtruthPlugin">
+    <!-- 1000 == 1 sec -->
+    <update_frequency>100</update_frequency>
+</plugin>
+```
+
+Collision and groundtruth plugins requires [TASFMessage](https://github.com/tiiuae/TASFMessages) library for work
