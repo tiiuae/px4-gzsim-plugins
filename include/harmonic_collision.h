@@ -5,7 +5,7 @@
 #include <gz/transport/Node.hh>
 #include <gz/sim/Model.hh>
 
-#include "CollisionObject.pb.h"
+#include "dependency/TASFMessages/CollisionObject.pb.h"
 
 namespace gz {
     using namespace sim;

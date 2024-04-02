@@ -7,7 +7,7 @@
 #include <gz/msgs.hh>
 #include <gz/sim/Model.hh>
 #include "common.h"
-#include "Groundtruth.pb.h"
+#include "dependency/TASFMessages/Groundtruth.pb.h"
 
 namespace gz {
     namespace sim {
