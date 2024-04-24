@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10.2 FATAL_ERROR)
-project(mavlink_sitl_gazebosim)
+project(mavlink_hitl_gazebosim)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
@@ -33,9 +33,9 @@ include_directories(
   ${MAVLINK_INCLUDE_DIRS}
 )
 
-add_library(mavlink_sitl_gazebosim SHARED src/gazebo_mavlink_interface.cpp src/mavlink_interface.cpp)
-set_property(TARGET mavlink_sitl_gazebosim PROPERTY CXX_STANDARD 17)
-target_link_libraries(mavlink_sitl_gazebosim
+add_library(mavlink_hitl_gazebosim SHARED src/gazebo_mavlink_interface.cpp src/mavlink_interface.cpp)
+set_property(TARGET mavlink_hitl_gazebosim PROPERTY CXX_STANDARD 17)
+target_link_libraries(mavlink_hitl_gazebosim
   PRIVATE ${Boost_LIBRARIES}
   PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
   PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION}
@@ -44,7 +44,7 @@ target_link_libraries(mavlink_sitl_gazebosim
 
 include(GNUInstallDirs)
 install(TARGETS
-  mavlink_sitl_gazebosim
+  mavlink_hitl_gazebosim
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 

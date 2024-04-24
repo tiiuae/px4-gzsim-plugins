@@ -1,37 +1,35 @@
-<img align="right" height="20" src="https://auterion.com/wp-content/uploads/2020/05/auterion_logo_default_sunrise.svg">
 
-# Ignition Gazebo for MAVLink SITL and HITL
 
-[![Build Tests](https://github.com/Auterion/sitl_ign_gazebo/actions/workflows/build_test.yml/badge.svg)](https://github.com/Auterion/sitl_ign_gazebo/actions/workflows/build_test.yml)
+# Gazebo Sim Plugins
+## MAVLink plugin for HITL
+A Bridge between Gzsim and Px4 in HITL mode via Mavlink
 
-This is a Software-In-The-Loop/Hardware-In-The-Loop simulation environment for the PX4 autopilot project with [Ignition Gazebo](https://ignitionrobotics.org/home)
+### Mavlink subscribed messages (from PX4)
+| Type                            | Description                        |
+|---------------------------------|------------------------------------|
+| HIL_ACTUATOR_CONTROLS           |  Actuator control outputs from PX4 |
 
-## Installation
+### Mavlink published messages (to PX4)
+| Type                 | Description                                                                                            |
+|----------------------|--------------------------------------------------------------------------------------------------------|
+| HIL_SENSOR           | The IMU readings in SI units in NED body frame, Magnetic field, absolute and differential pressure|
+| HIL_STATE_QUATERNION | Used mainly to send gz model pose info|
+| HIL_GPS              | The global position, as returned by the Global Positioning System (GPS). This is NOT the global position estimate of the system, but rather a RAW sensor value. Send now mainly to give home GPS coordinate to PX4|
 
-Follow instructions on the [official site](http://gazebosim.org/tutorials?cat=install) to install Gazebo.
 
-```
-sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list'
-wget http://packages.osrfoundation.org/gazebo.key -O - | sudo apt-key add -
-apt update
-apt install ignition-edifice
-```
+### Gz subscribed topics (from Gzsim)
+| Topic name                             | Type             | Description                                |
+|----------------------------------------|------------------|--------------------------------------------|
+| /link/base_link/sensor/imu_sensor/imu  | gz::msgs::IMU    | IMU sensor data                            |
+| /pose/info                             | gz::msgs::Pose_V | Position and orientation vector of a model |
 
-## Running the simulation
-The simulation can be run using the following command at the root of the [PX4/PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) repository
-```
-make px4_sitl ignition
-```
 
-For more instructions when running the simulation with PX4, follow the [documentation](http://docs.px4.io/master/en/simulation/ignition_gazebo.html)
+### Gzsim plugins affected
+| Plugin name                             | Description                                                              |
+|-----------------------------------------|--------------------------------------------------------------------------|
+| gz::sim::systems::MulticopterMotorModel | This system applies a thrust force to models with spinning propellers    |
 
-## Creation and install of debian package on Linux
-This creates a debian package and installs the plugins to /usr/lib on Linux. To use this package you must add /usr/lib to IGN_GAZEBO_SYSTEM_PLUGIN_PATH.
-```
-mkdir build
-cd build
-cmake ..
-make
-cpack -G DEB
-sudo dpkg -i *.deb
-```
+
+
+## ABC plugin for HITL/SITL
+
