@@ -1,6 +1,4 @@
-FROM ubuntu:22.04 AS builder
-
-ENV DEBIAN_FRONTEND=noninteractive
+FROM ghcr.io/tiiuae/gz-sim-server:main AS builder
 
 RUN apt-get update -y \
     && apt install -y \
@@ -10,12 +8,6 @@ RUN apt-get update -y \
     git \
     libboost-filesystem-dev \
     libtinyxml-dev
-
-RUN sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list' \
-    && wget http://packages.osrfoundation.org/gazebo.key -O - | apt-key add - \
-    && apt update -y
-
-RUN apt install -y  libgz-sim8-dev
 
 # Clone c_library_v2 commit matching with current px4-firmware mavlink commit
 # => mavlink/c_library_v2:fbdb7c29 is built from mavlink/mavlink:08112084
@@ -36,4 +28,3 @@ FROM busybox
 
 WORKDIR /artifacts
 COPY --from=builder /px4-plugins/build/*.so /artifacts
-
