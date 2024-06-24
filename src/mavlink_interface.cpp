@@ -216,7 +216,7 @@ void MavlinkInterface::ReceiveWorker() {
       }
     }
   }
-  std::cout << "[" << thrd_name << "] shutdown" << std::endl;
+  std::cout << "The thread [" << thrd_name << "] was shutdown." << std::endl;
 
 }
 
@@ -264,8 +264,10 @@ void MavlinkInterface::SendWorker() {
       return close_conn_ || gotSigInt_ || !sender_buffer_.empty();
     });
 
-    std::shared_ptr<mavlink_message_t> msg;
-    msg = sender_buffer_.front();
+    if (sender_buffer_.empty())
+      continue;
+
+    auto msg = sender_buffer_.front();
     if (msg) {
       sender_buffer_.pop();
       lock.unlock();
@@ -275,7 +277,7 @@ void MavlinkInterface::SendWorker() {
     }
   }
 
-  std::cout << "[" << thrd_name << "] Shutdown.." << std::endl;
+  std::cout << "The thread [" << thrd_name << "] was shutdown." << std::endl;
 }
 
 void MavlinkInterface::SendSensorMessages(uint64_t time_usec) {

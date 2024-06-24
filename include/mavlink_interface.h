@@ -202,7 +202,7 @@ private:
     struct pollfd fds_[N_FDS];
     bool use_tcp_{false};
     bool tcp_client_mode_{false};
-    bool close_conn_{false};
+    std::atomic<bool> close_conn_{false};
 
     in_addr_t mavlink_addr_;
     std::string mavlink_addr_str_{"INADDR_ANY"};
@@ -230,18 +230,18 @@ private:
     std::atomic<bool> tx_in_progress_;
     std::deque<MsgBuffer> tx_q_{};
 
-    bool baro_updated_;
-    bool diff_press_updated_;
-    bool mag_updated_;
-    bool imu_updated_;
+    bool baro_updated_{};
+    bool diff_press_updated_{};
+    bool mag_updated_{};
+    bool imu_updated_{};
 
-    double temperature_;
-    double pressure_alt_;
-    double abs_pressure_;
-    double diff_pressure_;
-    Eigen::Vector3d mag_b_;
-    Eigen::Vector3d accel_b_;
-    Eigen::Vector3d gyro_b_;
+    double temperature_{};
+    double pressure_alt_{};
+    double abs_pressure_{};
+    double diff_pressure_{};
+    Eigen::Vector3d mag_b_{};
+    Eigen::Vector3d accel_b_{};
+    Eigen::Vector3d gyro_b_{};
 
     //std::vector<HILData, Eigen::aligned_allocator<HILData>> hil_data_;
     std::atomic<bool> gotSigInt_ {false};
