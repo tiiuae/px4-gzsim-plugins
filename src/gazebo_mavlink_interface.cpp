@@ -187,6 +187,13 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
     }
   }
 
+  if (_sdf->HasElement("secondary_mavlink_addr")) {
+    std::string mavlink_addr_str = _sdf->Get<std::string>("secondary_mavlink_addr");
+    if (mavlink_addr_str != "INADDR_ANY") {
+      mavlink_interface_->SetSecondaryMavlinkAddr(mavlink_addr_str);
+    }
+  }
+
   if (_sdf->HasElement("mavlink_udp_remote_port")) {
     int mavlink_udp_remote_port = _sdf->Get<int>("mavlink_udp_remote_port");
     mavlink_interface_->SetMavlinkUdpRemotePort(mavlink_udp_remote_port);

@@ -1,4 +1,7 @@
 #include "mavlink_interface.h"
+
+#define MAX_CONSECUTIVE_SPARE_MSG 10
+
 MavlinkInterface::MavlinkInterface() {
 }
 
@@ -23,6 +26,10 @@ void MavlinkInterface::Load()
   memset((char *)&remote_simulator_addr_, 0, sizeof(remote_simulator_addr_));
   remote_simulator_addr_.sin_family = AF_INET;
   remote_simulator_addr_len_ = sizeof(remote_simulator_addr_);
+
+  memset((char *)&secondary_remote_simulator_addr_, 0, sizeof(secondary_remote_simulator_addr_));
+  secondary_remote_simulator_addr_.sin_family = AF_INET;
+  secondary_remote_simulator_addr_len_ = sizeof(secondary_remote_simulator_addr_);
 
   memset((char *)&local_simulator_addr_, 0, sizeof(local_simulator_addr_));
   local_simulator_addr_.sin_family = AF_INET;
@@ -100,6 +107,8 @@ void MavlinkInterface::Load()
     // When connecting to HITL, we specify the port where the mavlink traffic originates from.
     remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_;
     remote_simulator_addr_.sin_port = htons(mavlink_udp_remote_port_);
+    secondary_remote_simulator_addr_.sin_addr.s_addr = secondary_mavlink_addr_;
+    secondary_remote_simulator_addr_.sin_port = htons(mavlink_udp_remote_port_);
     local_simulator_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
     local_simulator_addr_.sin_port = htons(mavlink_udp_local_port_);
 
@@ -147,6 +156,9 @@ std::shared_ptr<mavlink_message_t> MavlinkInterface::PopRecvMessage() {
 }
 
 void MavlinkInterface::ReceiveWorker() {
+  struct sockaddr_in remote_addr;
+  socklen_t remote_addr_len = sizeof(remote_addr);
+
   char thrd_name[64] = {0};
   sprintf(thrd_name, "MAV_Recver_%d", gettid());
   pthread_setname_np(pthread_self(), thrd_name);
@@ -167,7 +179,7 @@ void MavlinkInterface::ReceiveWorker() {
   std::cout << "[" << thrd_name << "] Start receiving..." << std::endl;
 
   while(!close_conn_ && !gotSigInt_) {
-    int ret = recvfrom(fds_[CONNECTION_FD].fd, buf_, sizeof(buf_), 0, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
+    int ret = recvfrom(fds_[CONNECTION_FD].fd, buf_, sizeof(buf_), 0, (struct sockaddr *)&remote_addr, &remote_addr_len);
     if (ret < 0) {
       std::cerr << "[" << thrd_name << "] recvfrom error: " << strerror(errno) << std::endl;
       if (errno == ECONNRESET) {
@@ -462,14 +474,40 @@ void MavlinkInterface::handle_message(mavlink_message_t *msg)
   }
 }
 
-void MavlinkInterface::handle_heartbeat(mavlink_message_t *)
+void MavlinkInterface::handle_heartbeat(mavlink_message_t *msg)
 {
-  received_heartbeats_ = true;
+  if (msg->compid == 1) {
+    received_heartbeats_[0] = true;
+  } else if (msg->compid == 2) {
+    received_heartbeats_[1] = true;
+  }
 }
 
 void MavlinkInterface::handle_actuator_controls(mavlink_message_t *msg)
 {
+  static int consecutive_spare_msg = 0;
   const std::lock_guard<std::mutex> lock(actuator_mutex_);
+
+  if (msg->compid == 2) {
+    if (consecutive_spare_msg < MAX_CONSECUTIVE_SPARE_MSG) {
+      if (consecutive_spare_msg > 4) {
+        std::cout << "spare " << consecutive_spare_msg << std::endl;
+      }
+      consecutive_spare_msg++;
+      if (consecutive_spare_msg == MAX_CONSECUTIVE_SPARE_MSG) {
+        std::cout << "Primary controller not updating actuators => switch to backup controller" << std::endl;
+      } else {
+        return;
+      }
+    }
+  } else if (msg->compid == 1) {
+    if (consecutive_spare_msg == MAX_CONSECUTIVE_SPARE_MSG) {
+      // Already switched to backup controller, ignore primary controller messages
+      return;
+    } else {
+      consecutive_spare_msg = 0;
+    }
+  }
 
   mavlink_hil_actuator_controls_t controls;
   mavlink_msg_hil_actuator_controls_decode(msg, &controls);
@@ -502,8 +540,18 @@ void MavlinkInterface::send_mavlink_message(const mavlink_message_t *message)
     if (use_tcp_) {
       len = send(fds_[CONNECTION_FD].fd, buffer, packetlen, 0);
     } else {
+      ssize_t len2;
       len = sendto(fds_[CONNECTION_FD].fd, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_, remote_simulator_addr_len_);
+      len2 = sendto(fds_[CONNECTION_FD].fd, buffer, packetlen, 0, (struct sockaddr *)&secondary_remote_simulator_addr_, secondary_remote_simulator_addr_len_);
+      if (len < 0 && len2 < 0) {
+        // neither one worked => error
+        len = -1;
+      } else {
+        // at least one worked => success
+        len = 0;
+      }
     }
+
     if (len < 0) {
       if (received_first_actuator_) {
         std::cerr << "Failed sending mavlink message: " << strerror(errno) << std::endl;
