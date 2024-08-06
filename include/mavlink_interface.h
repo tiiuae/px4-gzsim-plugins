@@ -159,12 +159,13 @@ public:
     void SetDevice(std::string device) {device_ = device;}
     void SetEnableLockstep(bool enable_lockstep) {enable_lockstep_ = enable_lockstep;}
     void SetMavlinkAddr(std::string mavlink_addr) {mavlink_addr_str_ = mavlink_addr;}
+    void SetSecondaryMavlinkAddr(std::string mavlink_addr) {secondary_mavlink_addr_str_ = mavlink_addr;}
     void SetMavlinkTcpPort(int mavlink_tcp_port) {mavlink_tcp_port_ = mavlink_tcp_port;}
     void SetMavlinkUdpRemotePort(int mavlink_udp_port) {mavlink_udp_remote_port_ = mavlink_udp_port;}
     void SetMavlinkUdpLocalPort(int mavlink_udp_port) {mavlink_udp_local_port_ = mavlink_udp_port;}
     bool IsRecvBuffEmpty() {return receiver_buffer_.empty();}
 
-    bool ReceivedHeartbeats() const { return received_heartbeats_; }
+    bool ReceivedHeartbeats() const { return received_heartbeats_[0] || received_heartbeats_[1]; }
 
 private:
     bool received_actuator_{false};
@@ -192,6 +193,8 @@ private:
     socklen_t local_simulator_addr_len_;
     struct sockaddr_in remote_simulator_addr_;
     socklen_t remote_simulator_addr_len_;
+    struct sockaddr_in secondary_remote_simulator_addr_;
+    socklen_t secondary_remote_simulator_addr_len_;
 
     unsigned char buf_[65535];
     enum FD_TYPES {
@@ -205,7 +208,9 @@ private:
     std::atomic<bool> close_conn_{false};
 
     in_addr_t mavlink_addr_;
+    in_addr_t secondary_mavlink_addr_;
     std::string mavlink_addr_str_{"INADDR_ANY"};
+    std::string secondary_mavlink_addr_str_{"INADDR_ANY"};
     int mavlink_udp_remote_port_{kDefaultMavlinkUdpRemotePort}; // MAVLink refers to the PX4 simulator interface here
     int mavlink_udp_local_port_{kDefaultMavlinkUdpLocalPort}; // MAVLink refers to the PX4 simulator interface here
     int mavlink_tcp_port_{kDefaultMavlinkTcpPort}; // MAVLink refers to the PX4 simulator interface here
@@ -246,7 +251,7 @@ private:
     //std::vector<HILData, Eigen::aligned_allocator<HILData>> hil_data_;
     std::atomic<bool> gotSigInt_ {false};
 
-    bool received_heartbeats_ {false};
+    bool received_heartbeats_[2] {false, false};
 
     std::mutex receiver_buff_mtx_;
     std::queue<std::shared_ptr<mavlink_message_t>> receiver_buffer_;
