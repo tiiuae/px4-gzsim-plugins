@@ -194,6 +194,11 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
     mavlink_interface_->SetMavlinkUdpLocalPort(mavlink_udp_local_port);
   }
 
+  if (_sdf->HasElement("secondary_mavlink_udp_local_port")) {
+    int mavlink_udp_local_port = _sdf->Get<int>("secondary_mavlink_udp_local_port");
+    mavlink_interface_->SetSecondaryMavlinkUdpLocalPort(mavlink_udp_local_port);
+  }
+
   if (_sdf->HasElement("mavlink_tcp_port")) {
     int mavlink_tcp_port = _sdf->Get<int>("mavlink_tcp_port");
     mavlink_interface_->SetMavlinkTcpPort(mavlink_tcp_port);
