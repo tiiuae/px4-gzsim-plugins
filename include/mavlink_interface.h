@@ -164,14 +164,17 @@ public:
     void SetMavlinkTcpPort(int mavlink_tcp_port) {mavlink_tcp_port_ = mavlink_tcp_port;}
     void SetMavlinkUdpRemotePort(int mavlink_udp_port) {mavlink_udp_remote_port_ = mavlink_udp_port;}
     void SetMavlinkUdpLocalPort(int mavlink_udp_port) {mavlink_udp_local_port_ = mavlink_udp_port;}
+    void SetSecondaryMavlinkUdpLocalPort(int mavlink_udp_port) {secondary_mavlink_udp_local_port_ = mavlink_udp_port;}
     bool IsRecvBuffEmpty() {return receiver_buffer_.empty();}
 
-    bool ReceivedHeartbeats() const { return received_heartbeats_[0] || received_heartbeats_[1]; }
+    bool ReceivedHeartbeats() const { return received_heartbeats_; }
 
 private:
     bool received_actuator_{false};
     bool received_first_actuator_{false};
-    bool armed_;
+    bool armed1_{false};
+    bool armed2_{false};
+    bool use_redundant_{false};
     bool messages_handled_{false};
     Eigen::VectorXd input_reference_;
 
@@ -186,12 +189,16 @@ private:
     void ReceiveWorker();
     void SendWorker();
 
+    void ProcessReceivedMessage(int ret, char *thrd_name);
+
     static const unsigned n_out_max = 16;
 
     bool input_is_motor_[n_out_max];
 
     struct sockaddr_in local_simulator_addr_;
     socklen_t local_simulator_addr_len_;
+    struct sockaddr_in secondary_local_simulator_addr_;
+    socklen_t secondary_local_simulator_addr_len_;
     struct sockaddr_in remote_simulator_addr_;
     socklen_t remote_simulator_addr_len_;
     struct sockaddr_in secondary_remote_simulator_addr_;
@@ -214,10 +221,11 @@ private:
     std::string secondary_mavlink_addr_str_{"INADDR_ANY"};
     int mavlink_udp_remote_port_{kDefaultMavlinkUdpRemotePort}; // MAVLink refers to the PX4 simulator interface here
     int mavlink_udp_local_port_{kDefaultMavlinkUdpLocalPort}; // MAVLink refers to the PX4 simulator interface here
+    int secondary_mavlink_udp_local_port_{kDefaultMavlinkUdpLocalPort+1};
     int mavlink_tcp_port_{kDefaultMavlinkTcpPort}; // MAVLink refers to the PX4 simulator interface here
 
-
     int simulator_socket_fd_{0};
+    int simulator_second_socket_fd_{0};
     int simulator_tcp_client_fd_{0};
 
     bool enable_lockstep_{false};
@@ -252,7 +260,7 @@ private:
     //std::vector<HILData, Eigen::aligned_allocator<HILData>> hil_data_;
     std::atomic<bool> gotSigInt_ {false};
 
-    bool received_heartbeats_[2] {false, false};
+    bool received_heartbeats_{false};
 
     std::mutex receiver_buff_mtx_;
     std::queue<std::shared_ptr<mavlink_message_t>> receiver_buffer_;
