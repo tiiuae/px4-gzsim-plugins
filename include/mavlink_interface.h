@@ -148,6 +148,7 @@ public:
     void UpdateIMU(const SensorData::Imu &data);
     void UpdateMag(const SensorData::Magnetometer &data);
     Eigen::VectorXd GetActuatorControls();
+    bool IsInputMotorAtIndex(int index);
     bool GetArmedState();
     void onSigInt();
     uint16_t FinalizeOutgoingMessage(mavlink_message_t* msg, uint8_t system_id, uint8_t component_id,
@@ -186,7 +187,7 @@ private:
 
     static const unsigned n_out_max = 16;
 
-    int input_index_[n_out_max];
+    bool input_is_motor_[n_out_max];
 
     struct sockaddr_in local_simulator_addr_;
     socklen_t local_simulator_addr_len_;
