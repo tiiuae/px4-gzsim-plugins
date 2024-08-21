@@ -95,6 +95,7 @@ static const std::string kDefaultGPSTopic = "/gps";
 static const std::string kDefaultVisionTopic = "/vision_odom";
 static const std::string kDefaultMagTopic = "/magnetometer";
 static const std::string kDefaultBarometerTopic = "/air_pressure";
+static const std::string kDefaultCmdVelTopic = "/cmd_vel";
 
 namespace mavlink_interface
 {
@@ -121,6 +122,8 @@ namespace mavlink_interface
       bool received_first_actuator_{false};
       Eigen::VectorXd motor_input_reference_;
       Eigen::VectorXd servo_input_reference_;
+      float cmd_vel_thrust_{0.0};
+      float cmd_vel_torque_{0.0};
 
       gz::sim::Entity entity_{gz::sim::kNullEntity};
       gz::sim::Model model_{gz::sim::kNullEntity};
@@ -147,6 +150,7 @@ namespace mavlink_interface
       void PublishMotorVelocities(gz::sim::EntityComponentManager &_ecm,
           const Eigen::VectorXd &_vels);
       void PublishServoVelocities(const Eigen::VectorXd &_vels);
+      void PublishCmdVelocities(const float _thrust, const float _torque);
       void handle_actuator_controls(const gz::sim::UpdateInfo &_info);
       void handle_control(double _dt);
       void onSigInt();
@@ -166,10 +170,12 @@ namespace mavlink_interface
       double zero_position_armed_[n_out_max];
       int motor_input_index_[n_out_max];
       int servo_input_index_[n_out_max];
+      bool input_is_cmd_vel_{false};
 
-      /// \brief gz communication node.
+      /// \brief gz communication node and publishers.
       gz::transport::Node node;
       gz::transport::Node::Publisher servo_control_pub_[n_out_max];
+      gz::transport::Node::Publisher cmd_vel_pub_;
 
       std::string pose_sub_topic_{kDefaultPoseTopic};
       std::string imu_sub_topic_{kDefaultImuTopic};
@@ -179,6 +185,9 @@ namespace mavlink_interface
       std::string vision_sub_topic_{kDefaultVisionTopic};
       std::string mag_sub_topic_{kDefaultMagTopic};
       std::string baro_sub_topic_{kDefaultBarometerTopic};
+      std::string cmd_vel_sub_topic_{kDefaultCmdVelTopic};
+      int mc_motor_vel_scaling_{1000};
+      int fw_motor_vel_scaling_{3500};
 
       std::mutex last_imu_message_mutex_ {};
 

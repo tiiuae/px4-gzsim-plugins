@@ -79,7 +79,10 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   gazebo::getSdfParam<std::string>(_sdf, "irlockSubTopic", irlock_sub_topic_, irlock_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "imuSubTopic", imu_sub_topic_, imu_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "magSubTopic", mag_sub_topic_, mag_sub_topic_);
+  gazebo::getSdfParam<std::string>(_sdf, "cmdVelSubTopic", cmd_vel_sub_topic_, cmd_vel_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "baroSubTopic", baro_sub_topic_, baro_sub_topic_);
+  gazebo::getSdfParam<int>(_sdf, "mc_motor_vel_scaling", mc_motor_vel_scaling_, mc_motor_vel_scaling_);
+  gazebo::getSdfParam<int>(_sdf, "fw_motor_vel_scaling", fw_motor_vel_scaling_, fw_motor_vel_scaling_);
 
   // set motor and servo input_reference_ from inputs.control
   motor_input_reference_.resize(n_out_max);
@@ -98,7 +101,7 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
     tcp_client_mode = _sdf->Get<bool>("tcp_client_mode");
     mavlink_interface_->SetUseTcpClientMode(tcp_client_mode);
   }
-  gzmsg << "Connecting to PX4 SITL using " << (use_tcp ? (tcp_client_mode ? "TCP (client mode)" : "TCP (server mode)") : "UDP") << std::endl;
+  gzmsg << "Connecting to PX4 HITL using " << (use_tcp ? (tcp_client_mode ? "TCP (client mode)" : "TCP (server mode)") : "UDP") << std::endl;
 
   if (_sdf->HasElement("enable_lockstep"))
   {
@@ -139,6 +142,10 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   for (int i = 0; i < servo_input_reference_.size(); i++) {
     servo_control_pub_[i] = node.Advertise<gz::msgs::Double>(servo_control_topic + std::to_string(i));
   }
+
+  // Publish to cmd vel (for rover control)
+  auto cmd_vel_topic = model_name + cmd_vel_sub_topic_;
+  cmd_vel_pub_ = node.Advertise<gz::msgs::Twist>(cmd_vel_topic);
 
   // Subscribe to messages of sensors.
   auto imu_topic = vehicle_scope_prefix + imu_sub_topic_;
@@ -244,8 +251,12 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
   handle_control(dt);
 
   if (received_first_actuator_) {
-    PublishMotorVelocities(_ecm, motor_input_reference_);
-    PublishServoVelocities(servo_input_reference_);
+    if (input_is_cmd_vel_) {
+      PublishCmdVelocities(cmd_vel_thrust_, cmd_vel_torque_);
+    } else {
+      PublishMotorVelocities(_ecm, motor_input_reference_);
+      PublishServoVelocities(servo_input_reference_);
+    }
   }
 }
 
@@ -424,37 +435,64 @@ void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo 
   Eigen::VectorXd actuator_controls = mavlink_interface_->GetActuatorControls();
   if (actuator_controls.size() < n_out_max) return; //TODO: Handle this properly
 
-  // Read Input References for motors
-  unsigned n_motors = 0;
-  for (unsigned i = 0; i < n_out_max; i++) {
-    if (mavlink_interface_->IsInputMotorAtIndex(i)) {
-      motor_input_index_[n_motors++] = i;
-    }
-  }
-  motor_input_reference_.resize(n_motors);
-  for (int i = 0; i < motor_input_reference_.size(); i++) {
-    if (armed) {
-      motor_input_reference_[i] = actuator_controls[motor_input_index_[i]] * 1000;
-    } else {
-      motor_input_reference_[i] = 0;
-      // std::cout << motor_input_reference_ << ", ";
-    }
+  // Read Cmd vel input for rover
+  if (actuator_controls[n_out_max - 1] != 0.0 || actuator_controls[n_out_max - 2] != 0.0) {
+    cmd_vel_thrust_ = armed ? actuator_controls[n_out_max - 1] : 0.0;
+    cmd_vel_torque_ = armed ? actuator_controls[n_out_max - 2] : 0.0;
+    input_is_cmd_vel_ = true;
+    received_first_actuator_ = mavlink_interface_->GetReceivedFirstActuator();
+    return;
+  } else {
+    input_is_cmd_vel_ = false;
   }
 
   // Read Input References for servos
-  unsigned n_servos = 0;
-  for (unsigned i = 0; i < n_out_max; i++) {
-    if (!mavlink_interface_->IsInputMotorAtIndex(i)) {
-      servo_input_index_[n_servos++] = i;
+  if (servo_input_reference_.size() == n_out_max) {
+    unsigned n_servos = 0;
+    for (unsigned i = 0; i < n_out_max; i++) {
+      if (!mavlink_interface_->IsInputMotorAtIndex(i)) {
+        servo_input_index_[n_servos++] = i;
+      }
     }
+    servo_input_reference_.resize(n_servos);
   }
-  servo_input_reference_.resize(n_servos);
+
   for (int i = 0; i < servo_input_reference_.size(); i++) {
     if (armed) {
       servo_input_reference_[i] = actuator_controls[servo_input_index_[i]];
     } else {
       servo_input_reference_[i] = 0;
-      // std::cout << servo_input_reference_ << ", ";
+    }
+  }
+
+  // Read Input References for motors
+  if (motor_input_reference_.size() == n_out_max) {
+    unsigned n_motors = 0;
+    for (unsigned i = 0; i < n_out_max; i++) {
+      if (mavlink_interface_->IsInputMotorAtIndex(i)) {
+        motor_input_index_[n_motors++] = i;
+      }
+    }
+    motor_input_reference_.resize(n_motors);
+  }
+
+  for (int i = 0; i < motor_input_reference_.size(); i++) {
+    if (armed) {
+      if (i == motor_input_reference_.size() - 1) {
+        // Set pusher motor velocity scaling if airframe is either fw or vtol. This assumes the pusher motor is the last motor!
+        double scaling;
+        if (servo_input_reference_.size() > 0 && servo_input_reference_.size() != n_out_max) {
+          scaling = static_cast<double>(fw_motor_vel_scaling_);
+        } else {
+          scaling = static_cast<double>(mc_motor_vel_scaling_);
+        }
+        motor_input_reference_[i] = actuator_controls[motor_input_index_[i]] * scaling;
+      }
+      else {
+        motor_input_reference_[i] = actuator_controls[motor_input_index_[i]] * static_cast<double>(mc_motor_vel_scaling_);
+      }
+    } else {
+      motor_input_reference_[i] = 0;
     }
   }
 
@@ -515,13 +553,23 @@ void GazeboMavlinkInterface::PublishMotorVelocities(
   }
 }
 
-// Publish to servo control topic (gz.msgs.Double)
 void GazeboMavlinkInterface::PublishServoVelocities(const Eigen::VectorXd &_vels)
 {
   for (int i = 0; i < _vels.size(); i++) {
     gz::msgs::Double servo_input;
     servo_input.set_data(_vels(i));
     servo_control_pub_[i].Publish(servo_input);
+  }
+}
+
+void GazeboMavlinkInterface::PublishCmdVelocities(const float _thrust, const float _torque)
+{
+  gz::msgs::Twist cmd_vel_message;
+  cmd_vel_message.mutable_linear()->set_x(_thrust);
+  cmd_vel_message.mutable_angular()->set_z(_torque);
+
+  if (cmd_vel_pub_.Valid()) {
+    cmd_vel_pub_.Publish(cmd_vel_message);
   }
 }
 
