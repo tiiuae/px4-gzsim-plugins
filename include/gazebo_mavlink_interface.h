@@ -147,6 +147,7 @@ namespace mavlink_interface
       void MagnetometerCallback(const gz::msgs::Magnetometer &_msg);
       void GpsCallback(const gz::msgs::NavSat &_msg);
       void SendSensorMessages(const gz::sim::UpdateInfo &_info);
+      void SendStatusMessages(const gz::sim::UpdateInfo &_info, const gz::sim::EntityComponentManager &_ecm);
       void PublishMotorVelocities(gz::sim::EntityComponentManager &_ecm,
           const Eigen::VectorXd &_vels);
       void PublishServoVelocities(const Eigen::VectorXd &_vels);

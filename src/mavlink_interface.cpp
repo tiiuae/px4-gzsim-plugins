@@ -418,6 +418,36 @@ void MavlinkInterface::SendSensorMessages(uint64_t time_usec) {
   PushSendMessage(msg_shared);
 }
 
+void MavlinkInterface::SendEscStatusMessages(uint64_t time_usec, struct StatusData::EscStatus &status) {
+  mavlink_esc_status_t esc_status_msg{};
+  mavlink_esc_info_t esc_info_msg{};
+  static constexpr uint8_t batch_size = MAVLINK_MSG_ESC_STATUS_FIELD_RPM_LEN;
+  static uint16_t counter = 0;
+
+  esc_status_msg.time_usec = time_usec;
+  for (int i = 0; i < batch_size; i++) {
+    esc_status_msg.rpm[i] = status.esc[i].rpm;
+
+    esc_info_msg.failure_flags[i] = 0;
+    esc_info_msg.error_count[i] = 0;
+    esc_info_msg.temperature[i] = 20;
+  }
+
+  mavlink_message_t msg;
+  mavlink_msg_esc_status_encode_chan(254, 25, MAVLINK_COMM_0, &msg, &esc_status_msg);
+  auto msg_shared = std::make_shared<mavlink_message_t>(msg);
+  PushSendMessage(msg_shared);
+
+  esc_info_msg.counter = counter++;
+  esc_info_msg.count = status.esc_count;
+  esc_info_msg.connection_type = 0; // TODO: use two highest bits for selected input
+  esc_info_msg.info = (1u << status.esc_count) - 1;
+
+  mavlink_msg_esc_info_encode_chan(254, 25, MAVLINK_COMM_0, &msg, &esc_info_msg);
+  msg_shared = std::make_shared<mavlink_message_t>(msg);
+  PushSendMessage(msg_shared);
+}
+
 void MavlinkInterface::UpdateBarometer(const SensorData::Barometer &data) {
   const std::lock_guard<std::mutex> lock(sensor_msg_mutex_);
   temperature_ = data.temperature;

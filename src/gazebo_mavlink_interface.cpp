@@ -26,11 +26,13 @@
 
 #include <gz/plugin/Register.hh>
 #include <gz/sensors/Sensor.hh>
+#include <gz/sim/Joint.hh>
 #include <gz/sim/components/AirPressureSensor.hh>
 #include <gz/sim/components/Magnetometer.hh>
 #include <gz/sim/components/Imu.hh>
 #include <gz/sim/components/Pose.hh>
 #include <gz/transport/Discovery.hh>
+#include <gz/sim/components/Joint.hh>
 
 GZ_ADD_PLUGIN(
     mavlink_interface::GazeboMavlinkInterface,
@@ -268,6 +270,8 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
       PublishServoVelocities(servo_input_reference_);
     }
   }
+
+  SendStatusMessages(_info, _ecm);
 }
 
 void GazeboMavlinkInterface::PostUpdate(const gz::sim::UpdateInfo &_info,
@@ -435,6 +439,65 @@ void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo &_info
   imu_data.gyro_b = Eigen::Vector3d(gyro_b.X(), gyro_b.Y(), gyro_b.Z());
   mavlink_interface_->UpdateIMU(imu_data);
   mavlink_interface_->SendSensorMessages(time_usec);
+}
+
+void GazeboMavlinkInterface::SendStatusMessages(const gz::sim::UpdateInfo &_info, const gz::sim::EntityComponentManager &_ecm) {
+  uint64_t time_usec = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
+  struct StatusData::EscStatus status;
+
+  // TOOD: find out how to properly get the RPM for each motor from the motor model. Multicopter motor model probably
+  // doesn't support that. The joint velocity (some draft code left below) might be only for visuals.
+  // There is additionally the scaler "rotorVelocitySlowdownSim" that should be taken into account if
+  // using the joint velocity.
+
+  // Buth actually both below are wrong; the motor constant doesn't affect the
+  // visual rotation speed in gazebo, it is only used for thrust calculation.
+
+#if 1
+
+  // Read the joint velocities from gazebo
+  // Note: CW values are positive, CCW negative
+
+  std::vector<double> vels;
+  char joint_name_c[] = "rotor_0_joint";
+  gz::sim::Entity jointEntity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c), gz::sim::components::Joint());
+
+  double vel;
+  int i = 0;
+  while (jointEntity != gz::sim::kNullEntity) {
+    gz::sim::Joint joint(jointEntity);
+
+    std::optional<std::vector<double>> jointVelocity = joint.Velocity(_ecm);
+    if (jointVelocity && (*jointVelocity).size() > 0) {
+      vel = (*jointVelocity)[0]
+        / 1000 // maxRotVelocity
+        * 10;  // rotorVelocitySlowdownSim
+
+      vels.push_back(vel);
+    }
+
+    i++;
+    joint_name_c[6] = '0' + i;
+    jointEntity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c), gz::sim::components::Joint());
+  }
+#else
+
+  // Just use the actuator controls directly
+  // Note: this bypasses the motor model entirely and "fakes" the RPM.
+  // All RPM values are positive
+
+  auto vels = mavlink_interface_->GetActuatorControls();
+#endif
+
+  status.esc_count = vels.size();
+
+  for (int i = 0; i < vels.size(); i++) {
+    status.esc[i].rpm = vels[i]
+      / 0.00000854858 // motorConstant
+      / (2 * 3.14);   // rad/s -> RPM
+  }
+
+  mavlink_interface_->SendEscStatusMessages(time_usec, status);
 }
 
 void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo &_info) {
