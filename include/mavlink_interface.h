@@ -70,6 +70,8 @@ static constexpr auto kDefaultBaudRate = 921600;
 static constexpr ssize_t MAX_SIZE = MAVLINK_MAX_PACKET_LEN + 16;
 static constexpr size_t MAX_TXQ_SIZE = 1000;
 
+static constexpr ssize_t MAX_N_ESCS = 16;
+
 //! Rx packer framing status. (same as @p mavlink::mavlink_framing_t)
 enum class Framing : uint8_t {
 	incomplete = MAVLINK_FRAMING_INCOMPLETE,
@@ -110,6 +112,20 @@ namespace SensorData {
     };
 }
 
+namespace StatusData {
+    struct EscReport {
+        int rpm;
+	double voltage;
+        double current;
+    };
+
+    struct EscStatus {
+        int esc_count;
+        int esc_active_input;
+	struct EscReport esc[MAX_N_ESCS];
+    };
+}
+
 /*
 struct HILData {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -143,6 +159,7 @@ public:
     void close();
     void Load();
     void SendSensorMessages(const uint64_t time_usec);
+    void SendEscStatusMessages(const uint64_t time_usec, struct StatusData::EscStatus &status);
     void UpdateBarometer(const SensorData::Barometer &data);
     void UpdateAirspeed(const SensorData::Airspeed &data);
     void UpdateIMU(const SensorData::Imu &data);

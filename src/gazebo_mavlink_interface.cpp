@@ -26,10 +26,12 @@
 
 #include <gz/plugin/Register.hh>
 #include <gz/sensors/Sensor.hh>
+#include <gz/sim/Joint.hh>
 #include <gz/sim/components/AirPressureSensor.hh>
 #include <gz/sim/components/Magnetometer.hh>
 #include <gz/sim/components/Imu.hh>
 #include <gz/sim/components/Pose.hh>
+#include <gz/sim/components/Joint.hh>
 
 GZ_ADD_PLUGIN(
     mavlink_interface::GazeboMavlinkInterface,
@@ -255,6 +257,8 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
   if (received_first_actuator_) {
     PublishRotorVelocities(_ecm, input_reference_);
   }
+
+  SendStatusMessages(_info, _ecm);
 }
 
 void GazeboMavlinkInterface::PostUpdate(const gz::sim::UpdateInfo &_info,
@@ -422,6 +426,50 @@ void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo &_info
   imu_data.gyro_b = Eigen::Vector3d(gyro_b.X(), gyro_b.Y(), gyro_b.Z());
   mavlink_interface_->UpdateIMU(imu_data);
   mavlink_interface_->SendSensorMessages(time_usec);
+}
+
+void GazeboMavlinkInterface::SendStatusMessages(const gz::sim::UpdateInfo &_info, const gz::sim::EntityComponentManager &_ecm) {
+  uint64_t time_usec = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
+  struct StatusData::EscStatus status;
+
+#if 0
+  const std::string jointName = "rotor_0_joint";
+  gz::sim::Entity jointEntity = _ecm.EntityByComponents(gz::sim::components::Name(jointName), gz::sim::components::Joint());
+
+  double vel;
+  
+  if (jointEntity != gz::sim::kNullEntity) {
+	  gz::sim::Joint joint(jointEntity);
+
+	  std::optional<std::vector<double>> jointVelocity = joint.Velocity(_ecm);
+	  if (jointVelocity) {
+		  std::vector<double> vels = *jointVelocity;
+		  if (vels.size() > 0) {
+			  vel = vels[0];
+			  //std::cout << "Joint Velocity: " << vels[0] << std::endl;
+		  }
+	  }
+  }
+#endif
+
+  auto actuatorMsgComp =
+      _ecm.Component<gz::sim::components::Actuators>(model_.Entity());
+
+  if (actuatorMsgComp)
+  {
+	  gz::msgs::Actuators actuatorMsg = actuatorMsgComp->Data();
+	  actuatorMsg.velocity();
+  }
+
+  /*values should be read from the motor model? */
+  auto vels = mavlink_interface_->GetActuatorControls();
+  status.esc_count = vels.size();
+
+  for (int i = 0; i < vels.size(); i++) {
+	  status.esc[i].rpm = vel;
+  }
+
+  mavlink_interface_->SendEscStatusMessages(time_usec, status);
 }
 
 void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo &_info) {
