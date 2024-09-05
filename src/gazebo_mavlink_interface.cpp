@@ -51,6 +51,58 @@ GazeboMavlinkInterface::~GazeboMavlinkInterface() {
   mavlink_interface_->close();
 }
 
+void GazeboMavlinkInterface::ParseMulticopterMotorModelPlugins(const std::string &sdfFilePath)
+{
+  // Load the SDF file
+  sdf::Root root;
+  sdf::Errors errors = root.Load(sdfFilePath);
+  if (!errors.empty())
+  {
+    for (const auto &error : errors)
+    {
+      gzerr << "Error: " << error.Message() << std::endl;
+    }
+    return;
+  }
+
+  const sdf::Model *model = root.Model();
+  if (!model)
+  {
+    gzerr << "No models found in SDF file." << std::endl;
+    return;
+  }
+
+  // Iterate through all plugins in the model
+  for (const sdf::Plugin plugin : model->Plugins())
+  {
+    // Check if the plugin is a MulticopterMotorModel
+    if (plugin.Name() == "gz::sim::systems::DiffDrive") {
+      is_rover_ = true;
+      gzmsg << "Detected rover model" << std::endl;
+    } else if (plugin.Name() == "gz::sim::systems::MulticopterMotorModel") {
+      // Extract and print parameters
+      if (plugin.Element()->HasElement("motorNumber"))
+      {
+        int motorNumber = plugin.Element()->Get<int>("motorNumber");
+        if (motorNumber >= n_out_max)
+        {
+          gzerr << "Motor number " << motorNumber << " exceeds maximum number of motors " << n_out_max << std::endl;
+          continue;
+        }
+        int maxRotVelocityInt = 1;
+        if (plugin.Element()->HasElement("motorNumber"))
+        {
+          double maxRotVelocity = plugin.Element()->Get<double>("maxRotVelocity");
+          maxRotVelocityInt = (int)maxRotVelocity;
+          motor_vel_scalings_[motorNumber] = maxRotVelocityInt;
+          gzmsg << "  Motor[" << motorNumber << "] " << maxRotVelocityInt << std::endl;
+        }
+      }
+    }
+  }
+}
+
+
 void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
       const std::shared_ptr<const sdf::Element> &_sdf,
       gz::sim::EntityComponentManager &_ecm,
@@ -218,6 +270,9 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   }
 
   std::default_random_engine rnd_gen_;
+
+  gzmsg << "Try print motor plugins" << std::endl;
+  ParseMulticopterMotorModelPlugins(model_.SourceFilePath(_ecm));
 
   if (hostptr_ || mavlink_hostname_str_.empty()) {
     gzmsg << "--> load mavlink_interface_" << std::endl;

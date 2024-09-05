@@ -160,6 +160,7 @@ namespace mavlink_interface
       float AddSimpleNoise(float value, float mean, float stddev);
       void RotateQuaternion(gz::math::Quaterniond &q_FRD_to_NED,
         const gz::math::Quaterniond q_FLU_to_ENU);
+      void ParseMulticopterMotorModelPlugins(const std::string &sdfFilePath);
 
       static const unsigned n_out_max = 16;
 
@@ -171,6 +172,9 @@ namespace mavlink_interface
       int motor_input_index_[n_out_max];
       int servo_input_index_[n_out_max];
       bool input_is_cmd_vel_{false};
+
+      int motor_vel_scalings_[n_out_max] {1};
+      bool is_rover_{false};
 
       /// \brief gz communication node and publishers.
       gz::transport::Node node;
