@@ -41,11 +41,11 @@ GZ_ADD_PLUGIN(
 using namespace mavlink_interface;
 
 GazeboMavlinkInterface::GazeboMavlinkInterface() :
-    motor_input_index_ {},
-    servo_input_index_ {}
-    {
-      mavlink_interface_ = std::make_shared<MavlinkInterface>();
-    }
+  motor_input_index_ {},
+  servo_input_index_ {}
+{
+  mavlink_interface_ = std::make_shared<MavlinkInterface>();
+}
 
 GazeboMavlinkInterface::~GazeboMavlinkInterface() {
   mavlink_interface_->close();
@@ -71,7 +71,6 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
     protocol_version_ = _sdf->Get<float>("protocol_version");
   }
 
-
   gazebo::getSdfParam<std::string>(_sdf, "poseSubTopic", pose_sub_topic_, pose_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "gpsSubTopic", gps_sub_topic_, gps_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "visionSubTopic", vision_sub_topic_, vision_sub_topic_);
@@ -81,12 +80,13 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   gazebo::getSdfParam<std::string>(_sdf, "magSubTopic", mag_sub_topic_, mag_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "cmdVelSubTopic", cmd_vel_sub_topic_, cmd_vel_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "baroSubTopic", baro_sub_topic_, baro_sub_topic_);
-  gazebo::getSdfParam<int>(_sdf, "mc_motor_vel_scaling", mc_motor_vel_scaling_, mc_motor_vel_scaling_);
-  gazebo::getSdfParam<int>(_sdf, "fw_motor_vel_scaling", fw_motor_vel_scaling_, fw_motor_vel_scaling_);
 
-  // set motor and servo input_reference_ from inputs.control
+  // Set motor and servo input_reference_ from inputs.control
   motor_input_reference_.resize(n_out_max);
   servo_input_reference_.resize(n_out_max);
+
+  // Parse the MulticopterMotorModel plugins to get the motor velocity scalings
+  ParseMulticopterMotorModelPlugins(model_.SourceFilePath(_ecm));
 
   bool use_tcp = false;
   if (_sdf->HasElement("use_tcp"))
@@ -127,7 +127,7 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
     gzmsg << "Speed factor set to: " << speed_factor_ << std::endl;
   }
 
-  // // Listen to Ctrl+C / SIGINT.
+  // Listen to Ctrl+C / SIGINT.
   sigIntConnection_ = _em.Connect<gz::sim::events::Stop>(std::bind(&GazeboMavlinkInterface::onSigInt, this));
 
   auto world_name = "/" + gz::sim::scopedName(gz::sim::worldEntity(_ecm), _ecm);
@@ -247,8 +247,6 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
   SendSensorMessages(_info);
 
   handle_actuator_controls(_info);
-
-  handle_control(dt);
 
   if (received_first_actuator_) {
     if (input_is_cmd_vel_) {
@@ -478,32 +476,13 @@ void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo 
 
   for (int i = 0; i < motor_input_reference_.size(); i++) {
     if (armed) {
-      if (i == motor_input_reference_.size() - 1) {
-        // Set pusher motor velocity scaling if airframe is either fw or vtol. This assumes the pusher motor is the last motor!
-        double scaling;
-        if (servo_input_reference_.size() > 0 && servo_input_reference_.size() != n_out_max) {
-          scaling = static_cast<double>(fw_motor_vel_scaling_);
-        } else {
-          scaling = static_cast<double>(mc_motor_vel_scaling_);
-        }
-        motor_input_reference_[i] = actuator_controls[motor_input_index_[i]] * scaling;
-      }
-      else {
-        motor_input_reference_[i] = actuator_controls[motor_input_index_[i]] * static_cast<double>(mc_motor_vel_scaling_);
-      }
+      motor_input_reference_[i] = actuator_controls[motor_input_index_[i]] * motor_vel_scalings_[i];
     } else {
       motor_input_reference_[i] = 0;
     }
   }
 
   received_first_actuator_ = mavlink_interface_->GetReceivedFirstActuator();
-}
-
-void GazeboMavlinkInterface::handle_control(double _dt)
-{
-  // set joint positions
-  // for (int i = 0; i < motor_input_reference_.size(); i++) {
-  // }
 }
 
 bool GazeboMavlinkInterface::IsRunning()
@@ -627,4 +606,49 @@ void GazeboMavlinkInterface::RotateQuaternion(gz::math::Quaterniond &q_FRD_to_NE
 
 	// final rotation composition
 	q_FRD_to_NED = q_ENU_to_NED * q_FLU_to_ENU * q_FLU_to_FRD.Inverse();
+}
+
+void GazeboMavlinkInterface::ParseMulticopterMotorModelPlugins(const std::string &sdfFilePath)
+{
+  // Load the SDF file
+  sdf::Root root;
+  sdf::Errors errors = root.Load(sdfFilePath);
+  if (!errors.empty())
+  {
+    for (const auto &error : errors)
+    {
+      gzerr << "[gazebo_mavlink_interface] Error: " << error.Message() << std::endl;
+    }
+    return;
+  }
+
+  // Load the model
+  const sdf::Model *model = root.Model();
+  if (!model)
+  {
+    gzerr << "[gazebo_mavlink_interface] No models found in SDF file." << std::endl;
+    return;
+  }
+
+  // Iterate through all plugins in the model
+  for (const sdf::Plugin plugin : model->Plugins())
+  {
+    // Check if the plugin is a MulticopterMotorModel
+    if (plugin.Name() == "gz::sim::systems::MulticopterMotorModel") {
+      if (plugin.Element()->HasElement("motorNumber"))
+      {
+        const int motorNumber = plugin.Element()->Get<int>("motorNumber");
+        if (motorNumber >= n_out_max)
+        {
+          gzerr << "[gazebo_mavlink_interface] Motor number " << motorNumber
+            << " exceeds maximum number of motors " << n_out_max << std::endl;
+          continue;
+        }
+        if (plugin.Element()->HasElement("motorNumber"))
+        {
+          motor_vel_scalings_[motorNumber] = plugin.Element()->Get<double>("maxRotVelocity");
+        }
+      }
+    }
+  }
 }

@@ -152,7 +152,6 @@ namespace mavlink_interface
       void PublishServoVelocities(const Eigen::VectorXd &_vels);
       void PublishCmdVelocities(const float _thrust, const float _torque);
       void handle_actuator_controls(const gz::sim::UpdateInfo &_info);
-      void handle_control(double _dt);
       void onSigInt();
       bool IsRunning();
       bool resolveHostName();
@@ -160,6 +159,7 @@ namespace mavlink_interface
       float AddSimpleNoise(float value, float mean, float stddev);
       void RotateQuaternion(gz::math::Quaterniond &q_FRD_to_NED,
         const gz::math::Quaterniond q_FLU_to_ENU);
+      void ParseMulticopterMotorModelPlugins(const std::string &sdfFilePath);
 
       static const unsigned n_out_max = 16;
 
@@ -169,6 +169,7 @@ namespace mavlink_interface
       double zero_position_disarmed_[n_out_max];
       double zero_position_armed_[n_out_max];
       int motor_input_index_[n_out_max];
+      double motor_vel_scalings_[n_out_max] {1.0};
       int servo_input_index_[n_out_max];
       bool input_is_cmd_vel_{false};
 
@@ -186,8 +187,6 @@ namespace mavlink_interface
       std::string mag_sub_topic_{kDefaultMagTopic};
       std::string baro_sub_topic_{kDefaultBarometerTopic};
       std::string cmd_vel_sub_topic_{kDefaultCmdVelTopic};
-      int mc_motor_vel_scaling_{1000};
-      int fw_motor_vel_scaling_{3500};
 
       std::mutex last_imu_message_mutex_ {};
 
