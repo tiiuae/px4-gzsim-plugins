@@ -97,13 +97,13 @@ void MavlinkInterface::Load()
       fds_[LISTEN_FD].events = POLLIN; // only listens for new connections on tcp
     }
   } else {
-    // When connecting to SITL, we specify the port where the mavlink traffic originates from.
+    // When connecting to HITL, we specify the port where the mavlink traffic originates from.
     remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_;
     remote_simulator_addr_.sin_port = htons(mavlink_udp_remote_port_);
     local_simulator_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
     local_simulator_addr_.sin_port = htons(mavlink_udp_local_port_);
 
-    std::cout << "Creating UDP socket for SITL input on local port : " << mavlink_udp_local_port_ << " and remote port " << mavlink_udp_remote_port_ << std::endl;
+    std::cout << "Creating UDP socket for HITL input on local port : " << mavlink_udp_local_port_ << " and remote port " << mavlink_udp_remote_port_ << std::endl;
 
     if ((simulator_socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
       std::cerr << "Creating UDP socket failed: " << strerror(errno) << ", aborting" << std::endl;
@@ -474,15 +474,12 @@ void MavlinkInterface::handle_actuator_controls(mavlink_message_t *msg)
   mavlink_hil_actuator_controls_t controls;
   mavlink_msg_hil_actuator_controls_decode(msg, &controls);
 
-  armed_ = (controls.mode & MAV_MODE_FLAG_SAFETY_ARMED);
+  armed_ = (controls.mode & MAV_MODE_FLAG_SAFETY_ARMED || controls.mode & MAV_MODE_FLAG_TEST_ENABLED);
 
-  for (unsigned i = 0; i < n_out_max; i++) {
-    input_index_[i] = i;
-  }
-
-  // set rotor speeds, controller targets
+  // set rotor and servo speeds, controller targets
   input_reference_.resize(n_out_max);
   for (int i = 0; i < input_reference_.size(); i++) {
+    input_is_motor_[i] = controls.flags & (1 << i);
     input_reference_[i] = controls.controls[i];
   }
   received_actuator_ = true;
@@ -551,6 +548,11 @@ void MavlinkInterface::onSigInt() {
 Eigen::VectorXd MavlinkInterface::GetActuatorControls() {
   const std::lock_guard<std::mutex> lock(actuator_mutex_);
   return input_reference_;
+}
+
+bool MavlinkInterface::IsInputMotorAtIndex(int index) {
+  const std::lock_guard<std::mutex> lock(actuator_mutex_);
+  return input_is_motor_[index];
 }
 
 bool MavlinkInterface::GetArmedState() {

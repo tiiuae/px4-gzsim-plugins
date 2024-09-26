@@ -1,5 +1,5 @@
-#ifndef SITL_GAZEBO_COMMON_H_
-#define SITL_GAZEBO_COMMON_H_
+#ifndef HITL_GAZEBO_COMMON_H_
+#define HITL_GAZEBO_COMMON_H_
 /*
  * Copyright 2015 Fadri Furrer, ASL, ETH Zurich, Switzerland
  * Copyright 2015 Michael Burri, ASL, ETH Zurich, Switzerland
@@ -218,4 +218,4 @@ inline std::pair<double, double> reproject(gz::math::Vector3d& pos,
   return std::make_pair (lat_rad, lon_rad);
 }
 
-#endif  // SITL_GAZEBO_COMMON_H_
+#endif  // HITL_GAZEBO_COMMON_H_
