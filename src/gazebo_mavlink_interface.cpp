@@ -258,7 +258,7 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
     PublishRotorVelocities(_ecm, input_reference_);
   }
 
-  SendStatusMessages(_info, _ecm);
+  //  SendStatusMessages(_info, _ecm);
 }
 
 void GazeboMavlinkInterface::PostUpdate(const gz::sim::UpdateInfo &_info,
