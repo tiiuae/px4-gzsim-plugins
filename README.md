@@ -18,10 +18,11 @@ A Bridge between Gzsim and Px4 in HITL mode via Mavlink
 
 
 ### Gz subscribed topics (from Gzsim)
-| Topic name                             | Type             | Description                                |
-|----------------------------------------|------------------|--------------------------------------------|
-| /link/base_link/sensor/imu_sensor/imu  | gz::msgs::IMU    | IMU sensor data                            |
-| /pose/info                             | gz::msgs::Pose_V | Position and orientation vector of a model |
+| Topic name                                  | Type             | Description                                |
+|---------------------------------------------|------------------|--------------------------------------------|
+| /link/base_link/sensor/imu_sensor/imu       | gz::msgs::IMU    | IMU sensor data                            |
+| /link/base_link/sensor/natsat_sensor/natsat | gz::msgs::Natsat | GPS data                                   |
+| /pose/info                                  | gz::msgs::Pose_V | Position and orientation vector of a model |
 
 
 ### Gzsim plugins affected
