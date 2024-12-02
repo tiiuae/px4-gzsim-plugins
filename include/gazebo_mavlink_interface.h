@@ -161,7 +161,7 @@ namespace mavlink_interface
         const gz::math::Quaterniond q_FLU_to_ENU);
       void ParseMulticopterMotorModelPlugins(const std::string &sdfFilePath);
 
-      static const unsigned n_out_max = 16;
+      static const unsigned n_out_max = 10;
 
       double input_offset_[n_out_max];
       std::string joint_control_type_[n_out_max];
