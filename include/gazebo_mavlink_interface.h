@@ -147,6 +147,8 @@ namespace mavlink_interface
       void MagnetometerCallback(const gz::msgs::Magnetometer &_msg);
       void GpsCallback(const gz::msgs::NavSat &_msg);
       void SendSensorMessages(const gz::sim::UpdateInfo &_info);
+      void SendStatusMessages(const gz::sim::UpdateInfo &_info,
+          const gz::sim::EntityComponentManager &_ecm);
       void PublishMotorVelocities(gz::sim::EntityComponentManager &_ecm,
           const Eigen::VectorXd &_vels);
       void PublishServoVelocities(const Eigen::VectorXd &_vels);
@@ -202,6 +204,9 @@ namespace mavlink_interface
       bool diff_press_updated_;
 
       double imu_update_interval_ = 0.004; ///< Used for non-lockstep
+
+      uint64_t status_update_interval_ = 200; ///< Interval for sending ESC status / info in ms
+      uint64_t status_last_update_time_ = 0;
 
       gz::math::Vector3d gravity_W_{gz::math::Vector3d(0.0, 0.0, -9.8)};
       gz::math::Vector3d velocity_prev_W_;

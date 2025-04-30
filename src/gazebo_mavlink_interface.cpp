@@ -26,11 +26,15 @@
 
 #include <gz/plugin/Register.hh>
 #include <gz/sensors/Sensor.hh>
+#include <gz/sim/Joint.hh>
 #include <gz/sim/components/AirPressureSensor.hh>
 #include <gz/sim/components/Magnetometer.hh>
 #include <gz/sim/components/Imu.hh>
 #include <gz/sim/components/Pose.hh>
 #include <gz/transport/Discovery.hh>
+#include <gz/sim/components/Joint.hh>
+
+#define RAD_S_TO_RPM 9.549297
 
 GZ_ADD_PLUGIN(
     mavlink_interface::GazeboMavlinkInterface,
@@ -260,6 +264,12 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
 
 void GazeboMavlinkInterface::PostUpdate(const gz::sim::UpdateInfo &_info,
     const gz::sim::EntityComponentManager &_ecm) {
+  // Send back status data (ESCs) after physics update at a certain interval
+  uint64_t current_time = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e3).count();
+  if (current_time - status_last_update_time_ >= status_update_interval_) {
+    SendStatusMessages(_info, _ecm);
+    status_last_update_time_ = current_time;
+  }
 }
 
 void GazeboMavlinkInterface::PoseCallback(const gz::msgs::Pose_V &_msg){
@@ -423,6 +433,32 @@ void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo &_info
   imu_data.gyro_b = Eigen::Vector3d(gyro_b.X(), gyro_b.Y(), gyro_b.Z());
   mavlink_interface_->UpdateIMU(imu_data);
   mavlink_interface_->SendSensorMessages(time_usec);
+}
+
+void GazeboMavlinkInterface::SendStatusMessages(const gz::sim::UpdateInfo &_info, const gz::sim::EntityComponentManager &_ecm) {
+  uint64_t time_usec = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
+  struct StatusData::EscStatus status;
+  std::vector<double> vels;
+  char joint_name_c[] = "rotor_0_joint"; // This assumes rotor naming for all model is consistent
+  gz::sim::Entity joint_entity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c), gz::sim::components::Joint());;
+
+  double vel;
+  int i = 0;
+  while (joint_entity != gz::sim::kNullEntity) {
+    // Get velocity component data from joint entity
+    std::optional<std::vector<double>> joint_velocity = _ecm.ComponentData<gz::sim::components::JointVelocity>(joint_entity);
+    if (joint_velocity && (*joint_velocity).size() > 0) {
+      status.esc[i].rpm = (*joint_velocity)[0] * RAD_S_TO_RPM;
+    }
+    // Get joint entity
+    i++;
+    joint_name_c[6] = '0' + i;
+    joint_entity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c), gz::sim::components::Joint());
+  }
+
+  status.esc_count = i;
+
+  mavlink_interface_->SendEscStatusMessages(time_usec, status);
 }
 
 void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo &_info) {
