@@ -19,7 +19,7 @@ void MavlinkInterface::Load()
       abort();
     }
   }
-  if (secondary_mavlink_addr_str_ != "INADDR_ANY") {
+  if (ft_enabled_ && secondary_mavlink_addr_str_ != "INADDR_ANY") {
     secondary_mavlink_addr_ = inet_addr(secondary_mavlink_addr_str_.c_str());
     if (secondary_mavlink_addr_ == INADDR_NONE) {
       std::cerr << "Invalid secondary_mavlink_addr: " << secondary_mavlink_addr_ << ", aborting" << std::endl;
@@ -138,16 +138,18 @@ void MavlinkInterface::Load()
       abort();
     }
 
-    std::cout << "Creating secondary UDP socket for HITL input on local port : " << secondary_mavlink_udp_local_port_ << " and remote port " << mavlink_udp_remote_port_ << std::endl;
+    if (ft_enabled_) {
+      std::cout << "Creating secondary UDP socket for HITL input on local port : " << secondary_mavlink_udp_local_port_ << " and remote port " << mavlink_udp_remote_port_ << std::endl;
 
-    if ((simulator_second_socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-      std::cerr << "Creating secondary UDP socket failed: " << strerror(errno) << ", aborting" << std::endl;
-      abort();
-    }
+      if ((simulator_second_socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        std::cerr << "Creating secondary UDP socket failed: " << strerror(errno) << ", aborting" << std::endl;
+        abort();
+      }
 
-    if (bind(simulator_second_socket_fd_, (struct sockaddr *)&secondary_local_simulator_addr_, secondary_local_simulator_addr_len_) < 0) {
-      std::cerr << "secondary bind failed: " << strerror(errno) << ", aborting" << std::endl;
-      abort();
+      if (bind(simulator_second_socket_fd_, (struct sockaddr *)&secondary_local_simulator_addr_, secondary_local_simulator_addr_len_) < 0) {
+        std::cerr << "secondary bind failed: " << strerror(errno) << ", aborting" << std::endl;
+        abort();
+      }
     }
 
     memset(fds_, 0, sizeof(fds_));
@@ -253,12 +255,19 @@ void MavlinkInterface::ReceiveWorker() {
   std::cout << "[" << thrd_name << "] Start receiving..." << std::endl;
 
   fd_set readfds;
-  int maxfd = std::max(simulator_socket_fd_, simulator_second_socket_fd_) + 1;
+  int maxfd;
+  if (ft_enabled_) {
+    maxfd = std::max(simulator_socket_fd_, simulator_second_socket_fd_) + 1;
+  } else {
+    maxfd = simulator_socket_fd_ + 1;
+  }
 
   while(!close_conn_ && !gotSigInt_) {
     FD_ZERO(&readfds);
     FD_SET(simulator_socket_fd_, &readfds);
-    FD_SET(simulator_second_socket_fd_, &readfds);
+    if (ft_enabled_) {
+      FD_SET(simulator_second_socket_fd_, &readfds);
+    }
 
     struct timeval tv = {1, 0}; // 1 second timeout
     int ret = select(maxfd, &readfds, nullptr, nullptr, &tv);
@@ -279,7 +288,7 @@ void MavlinkInterface::ReceiveWorker() {
       // ... process data
       ProcessReceivedMessage(ret, thrd_name);
     }
-    if (FD_ISSET(simulator_second_socket_fd_, &readfds)) {
+    if (ft_enabled_ && FD_ISSET(simulator_second_socket_fd_, &readfds)) {
       // Receive data from sock2
       int ret = recvfrom(simulator_second_socket_fd_, buf_, sizeof(buf_), 0, (struct sockaddr *)&remote_addr, &remote_addr_len);
       // ... process data
@@ -662,21 +671,23 @@ void MavlinkInterface::handle_actuator_controls(mavlink_message_t *msg)
     armed1_ = is_running(1, controls);
     //armed1_ = (controls.mode & MAV_MODE_FLAG_SAFETY_ARMED || controls.mode & MAV_MODE_FLAG_TEST_ENABLED);
     //std::cout << "Primary FC1: " << (armed1_ ? "ARMED" : "DISARMED") << std::endl;
-    if (armed1_) {
-      consecutive_spare_msg = 0;
-      if (use_redundant_) {
-        use_redundant_ = false;
-        std::cout << "Primary FC1 armed => Use primary FC1" << std::endl;
+    if (ft_enabled_) {
+      if (armed1_) {
+        consecutive_spare_msg = 0;
+        if (use_redundant_) {
+          use_redundant_ = false;
+          std::cout << "Primary FC1 armed => Use primary FC1" << std::endl;
+        }
+      } else {
+        if (!use_redundant_) {
+          std::cout << "Primary FC1 disarmed => Use redundant FC2" << std::endl;
+        }
+        use_redundant_ = true;
       }
-    } else {
-      if (!use_redundant_) {
-        std::cout << "Primary FC1 disarmed => Use redundant FC2" << std::endl;
-      }
-      use_redundant_ = true;
-    }
 
-    if (use_redundant_) {
-      return;
+      if (use_redundant_) {
+        return;
+      }
     }
   }
 
@@ -706,15 +717,18 @@ void MavlinkInterface::send_mavlink_message(const mavlink_message_t *message)
     if (use_tcp_) {
       len = send(fds_[CONNECTION_FD].fd, buffer, packetlen, 0);
     } else {
-      ssize_t len2;
+
       len = sendto(simulator_socket_fd_, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_, remote_simulator_addr_len_);
-      len2 = sendto(simulator_second_socket_fd_, buffer, packetlen, 0, (struct sockaddr *)&secondary_remote_simulator_addr_, secondary_remote_simulator_addr_len_);
-      if (len < 0 && len2 < 0) {
-        // neither one worked => error
-        len = -1;
-      } else {
-        // at least one worked => success
-        len = 0;
+
+      if (ft_enabled_) {
+        ssize_t len2 = sendto(simulator_second_socket_fd_, buffer, packetlen, 0, (struct sockaddr *)&secondary_remote_simulator_addr_, secondary_remote_simulator_addr_len_);
+        if (len < 0 && len2 < 0) {
+          // neither one worked => error
+          len = -1;
+        } else {
+          // at least one worked => success
+          len = 0;
+        }
       }
     }
 
@@ -735,7 +749,12 @@ void MavlinkInterface::send_mavlink_message(const mavlink_message_t *message)
 void MavlinkInterface::close()
 {
   // Shutdown receiver side
-  shutdown(fds_[CONNECTION_FD].fd, SHUT_RD);
+  if (fds_[CONNECTION_FD].fd >= 0) {
+    shutdown(fds_[CONNECTION_FD].fd, SHUT_RD);
+  }
+  if (simulator_second_socket_fd_ >= 0) {
+    shutdown(simulator_second_socket_fd_, SHUT_RD);
+  }
 
   if (receiver_thread_.joinable())
     receiver_thread_.join();
@@ -745,9 +764,16 @@ void MavlinkInterface::close()
     sender_thread_.join();
   }
 
-  ::close(fds_[CONNECTION_FD].fd);
-  fds_[CONNECTION_FD] = { 0, 0, 0 };
-  fds_[CONNECTION_FD].fd = -1;
+  if (fds_[CONNECTION_FD].fd >= 0) {
+    ::close(fds_[CONNECTION_FD].fd);
+    fds_[CONNECTION_FD].fd = -1;
+    fds_[CONNECTION_FD] = { 0, 0, 0 };
+  }
+
+  if (simulator_second_socket_fd_ >= 0) {
+    ::close(simulator_second_socket_fd_);
+    simulator_second_socket_fd_ = -1;
+  }
 
   received_first_actuator_ = false;
 }

@@ -177,11 +177,11 @@ public:
     void SetDevice(std::string device) {device_ = device;}
     void SetEnableLockstep(bool enable_lockstep) {enable_lockstep_ = enable_lockstep;}
     void SetMavlinkAddr(std::string mavlink_addr) {mavlink_addr_str_ = mavlink_addr;}
-    void SetSecondaryMavlinkAddr(std::string mavlink_addr) {secondary_mavlink_addr_str_ = mavlink_addr;}
+    void SetSecondaryMavlinkAddr(std::string mavlink_addr) {secondary_mavlink_addr_str_ = mavlink_addr; ft_enabled_ = true;}
     void SetMavlinkTcpPort(int mavlink_tcp_port) {mavlink_tcp_port_ = mavlink_tcp_port;}
     void SetMavlinkUdpRemotePort(int mavlink_udp_port) {mavlink_udp_remote_port_ = mavlink_udp_port;}
     void SetMavlinkUdpLocalPort(int mavlink_udp_port) {mavlink_udp_local_port_ = mavlink_udp_port;}
-    void SetSecondaryMavlinkUdpLocalPort(int mavlink_udp_port) {secondary_mavlink_udp_local_port_ = mavlink_udp_port;}
+    void SetSecondaryMavlinkUdpLocalPort(int mavlink_udp_port) {secondary_mavlink_udp_local_port_ = mavlink_udp_port; ft_enabled_ = true;}
     bool IsRecvBuffEmpty() {return receiver_buffer_.empty();}
 
     bool ReceivedHeartbeats() const { return received_heartbeats_; }
@@ -192,6 +192,7 @@ private:
     bool armed1_{false};
     bool armed2_{false};
     bool use_redundant_{false};
+    bool ft_enabled_{false};    // Fault redundance feature enabled
     bool messages_handled_{false};
     Eigen::VectorXd input_reference_;
 
@@ -241,9 +242,9 @@ private:
     int secondary_mavlink_udp_local_port_{kDefaultMavlinkUdpLocalPort+1};
     int mavlink_tcp_port_{kDefaultMavlinkTcpPort}; // MAVLink refers to the PX4 simulator interface here
 
-    int simulator_socket_fd_{0};
-    int simulator_second_socket_fd_{0};
-    int simulator_tcp_client_fd_{0};
+    int simulator_socket_fd_{-1};
+    int simulator_second_socket_fd_{-1};
+    int simulator_tcp_client_fd_{-1};
 
     bool enable_lockstep_{false};
 
