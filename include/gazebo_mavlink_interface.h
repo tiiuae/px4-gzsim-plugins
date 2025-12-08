@@ -174,6 +174,7 @@ namespace mavlink_interface
       double motor_vel_scalings_[n_out_max] {1.0};
       int servo_input_index_[n_out_max];
       bool input_is_cmd_vel_{false};
+      bool input_is_cmd_vel_last_{false};
 
       /// \brief gz communication node and publishers.
       gz::transport::Node node;

@@ -265,8 +265,9 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
   handle_actuator_controls(_info);
 
   if (received_first_actuator_) {
-    if (input_is_cmd_vel_) {
+    if (input_is_cmd_vel_ || input_is_cmd_vel_last_) {
       PublishCmdVelocities(cmd_vel_thrust_, cmd_vel_torque_);
+      input_is_cmd_vel_last_ = false;
     } else {
       PublishMotorVelocities(_ecm, motor_input_reference_);
       PublishServoVelocities(servo_input_reference_);
@@ -483,12 +484,18 @@ void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo 
 
   // Read Cmd vel input for rover
   if (actuator_controls[n_out_max - 1] != 0.0 || actuator_controls[n_out_max - 2] != 0.0) {
-    cmd_vel_thrust_ = armed ? actuator_controls[n_out_max - 1] : 0.0;
-    cmd_vel_torque_ = armed ? actuator_controls[n_out_max - 2] : 0.0;
+    cmd_vel_thrust_ = actuator_controls[n_out_max - 1];
+    cmd_vel_torque_ = actuator_controls[n_out_max - 2];
     input_is_cmd_vel_ = true;
     received_first_actuator_ = mavlink_interface_->GetReceivedFirstActuator();
     return;
   } else {
+    // Send last cmd_vel once to zero it out
+    if (input_is_cmd_vel_) {
+      cmd_vel_thrust_ = 0.0;
+      cmd_vel_torque_ = 0.0;
+      input_is_cmd_vel_last_ = true;
+    }
     input_is_cmd_vel_ = false;
   }
 
