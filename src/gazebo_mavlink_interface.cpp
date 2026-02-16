@@ -19,35 +19,30 @@
  * limitations under the License.
  */
 
+#include <arpa/inet.h>
 #include <gazebo_mavlink_interface.h>
 #include <netdb.h>
-#include <arpa/inet.h>
 #include <random>
 
 #include <gz/plugin/Register.hh>
 #include <gz/sensors/Sensor.hh>
 #include <gz/sim/Joint.hh>
 #include <gz/sim/components/AirPressureSensor.hh>
-#include <gz/sim/components/Magnetometer.hh>
 #include <gz/sim/components/Imu.hh>
+#include <gz/sim/components/Joint.hh>
+#include <gz/sim/components/Magnetometer.hh>
 #include <gz/sim/components/Pose.hh>
 #include <gz/transport/Discovery.hh>
-#include <gz/sim/components/Joint.hh>
 
 #define RAD_S_TO_RPM 9.549297
 
-GZ_ADD_PLUGIN(
-    mavlink_interface::GazeboMavlinkInterface,
-    gz::sim::System,
-    mavlink_interface::GazeboMavlinkInterface::ISystemConfigure,
-    mavlink_interface::GazeboMavlinkInterface::ISystemPreUpdate,
-    mavlink_interface::GazeboMavlinkInterface::ISystemPostUpdate)
+GZ_ADD_PLUGIN(mavlink_interface::GazeboMavlinkInterface, gz::sim::System,
+              mavlink_interface::GazeboMavlinkInterface::ISystemConfigure,
+              mavlink_interface::GazeboMavlinkInterface::ISystemPreUpdate,
+              mavlink_interface::GazeboMavlinkInterface::ISystemPostUpdate)
 using namespace mavlink_interface;
 
-GazeboMavlinkInterface::GazeboMavlinkInterface() :
-  motor_input_index_ {},
-  servo_input_index_ {}
-{
+GazeboMavlinkInterface::GazeboMavlinkInterface() : motor_input_index_{}, servo_input_index_{} {
   mavlink_interface_ = std::make_shared<MavlinkInterface>();
 }
 
@@ -55,10 +50,10 @@ GazeboMavlinkInterface::~GazeboMavlinkInterface() {
   mavlink_interface_->close();
 }
 
-void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
-      const std::shared_ptr<const sdf::Element> &_sdf,
-      gz::sim::EntityComponentManager &_ecm,
-      gz::sim::EventManager &_em) {
+void GazeboMavlinkInterface::Configure(const gz::sim::Entity& _entity,
+                                       const std::shared_ptr<const sdf::Element>& _sdf,
+                                       gz::sim::EntityComponentManager& _ecm,
+                                       gz::sim::EventManager& _em) {
 
   namespace_.clear();
   if (_sdf->HasElement("robotNamespace")) {
@@ -78,7 +73,8 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   gazebo::getSdfParam<std::string>(_sdf, "poseSubTopic", pose_sub_topic_, pose_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "gpsSubTopic", gps_sub_topic_, gps_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "visionSubTopic", vision_sub_topic_, vision_sub_topic_);
-  gazebo::getSdfParam<std::string>(_sdf, "opticalFlowSubTopic", opticalFlow_sub_topic_, opticalFlow_sub_topic_);
+  gazebo::getSdfParam<std::string>(_sdf, "opticalFlowSubTopic", opticalFlow_sub_topic_,
+                                   opticalFlow_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "irlockSubTopic", irlock_sub_topic_, irlock_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "imuSubTopic", imu_sub_topic_, imu_sub_topic_);
   gazebo::getSdfParam<std::string>(_sdf, "magSubTopic", mag_sub_topic_, mag_sub_topic_);
@@ -93,22 +89,21 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   ParseMulticopterMotorModelPlugins(model_.SourceFilePath(_ecm));
 
   bool use_tcp = false;
-  if (_sdf->HasElement("use_tcp"))
-  {
+  if (_sdf->HasElement("use_tcp")) {
     use_tcp = _sdf->Get<bool>("use_tcp");
     mavlink_interface_->SetUseTcp(use_tcp);
   }
 
   bool tcp_client_mode = false;
-  if (_sdf->HasElement("tcp_client_mode"))
-  {
+  if (_sdf->HasElement("tcp_client_mode")) {
     tcp_client_mode = _sdf->Get<bool>("tcp_client_mode");
     mavlink_interface_->SetUseTcpClientMode(tcp_client_mode);
   }
-  gzmsg << "Connecting to PX4 HITL using " << (use_tcp ? (tcp_client_mode ? "TCP (client mode)" : "TCP (server mode)") : "UDP") << std::endl;
+  gzmsg << "Connecting to PX4 HITL using "
+        << (use_tcp ? (tcp_client_mode ? "TCP (client mode)" : "TCP (server mode)") : "UDP")
+        << std::endl;
 
-  if (_sdf->HasElement("enable_lockstep"))
-  {
+  if (_sdf->HasElement("enable_lockstep")) {
     enable_lockstep_ = _sdf->Get<bool>("enable_lockstep");
     mavlink_interface_->SetEnableLockstep(enable_lockstep_);
   }
@@ -116,14 +111,11 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
 
   // When running in lockstep, we can run the simulation slower or faster than
   // realtime. The speed can be set using the env variable PX4_SIM_SPEED_FACTOR.
-  if (enable_lockstep_)
-  {
-    const char *speed_factor_str = std::getenv("PX4_SIM_SPEED_FACTOR");
-    if (speed_factor_str)
-    {
+  if (enable_lockstep_) {
+    const char* speed_factor_str = std::getenv("PX4_SIM_SPEED_FACTOR");
+    if (speed_factor_str) {
       speed_factor_ = std::atof(speed_factor_str);
-      if (!std::isfinite(speed_factor_) || speed_factor_ <= 0.0)
-      {
+      if (!std::isfinite(speed_factor_) || speed_factor_ <= 0.0) {
         gzerr << "Invalid speed factor '" << speed_factor_str << "', aborting" << std::endl;
         abort();
       }
@@ -132,19 +124,21 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   }
 
   // Listen to Ctrl+C / SIGINT.
-  sigIntConnection_ = _em.Connect<gz::sim::events::Stop>(std::bind(&GazeboMavlinkInterface::onSigInt, this));
+  sigIntConnection_ =
+      _em.Connect<gz::sim::events::Stop>(std::bind(&GazeboMavlinkInterface::onSigInt, this));
 
   auto world_name = "/" + gz::sim::scopedName(gz::sim::worldEntity(_ecm), _ecm);
 
   auto model_name = gz::sim::topicFromScopedName(
-    _ecm.EntityByComponents(gz::sim::components::Name(model_name_)), _ecm, false);
+      _ecm.EntityByComponents(gz::sim::components::Name(model_name_)), _ecm, false);
 
   auto vehicle_scope_prefix = world_name + model_name;
 
   // Publish to servo control
   auto servo_control_topic = model_name + "/servo_";
   for (int i = 0; i < servo_input_reference_.size(); i++) {
-    servo_control_pub_[i] = node.Advertise<gz::msgs::Double>(servo_control_topic + std::to_string(i));
+    servo_control_pub_[i] =
+        node.Advertise<gz::msgs::Double>(servo_control_topic + std::to_string(i));
   }
 
   // Publish to cmd vel (for rover control)
@@ -176,11 +170,9 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
 
   if (_sdf->HasElement("mavlink_hostname")) {
     mavlink_hostname_str_ = _sdf->Get<std::string>("mavlink_hostname");
-    if (! mavlink_hostname_str_.empty()) {
+    if (!mavlink_hostname_str_.empty()) {
       // Start hostname resolver thread
-      hostname_resolver_thread_ = std::thread([this] () {
-        ResolveWorker();
-      });
+      hostname_resolver_thread_ = std::thread([this]() { ResolveWorker(); });
     }
   }
 
@@ -224,12 +216,10 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   if (protocol_version_ == 2.0) {
     chan_state->flags &= ~(MAVLINK_STATUS_FLAG_OUT_MAVLINK1);
     gzmsg << "Using MAVLink protocol v2.0" << std::endl;
-  }
-  else if (protocol_version_ == 1.0) {
+  } else if (protocol_version_ == 1.0) {
     chan_state->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
     gzmsg << "Using MAVLink protocol v1.0" << std::endl;
-  }
-  else {
+  } else {
     gzerr << "Unkown protocol version! Using v" << protocol_version_ << "by default " << std::endl;
   }
 
@@ -242,8 +232,8 @@ void GazeboMavlinkInterface::Configure(const gz::sim::Entity &_entity,
   }
 }
 
-void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
-  gz::sim::EntityComponentManager &_ecm) {
+void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo& _info,
+                                       gz::sim::EntityComponentManager& _ecm) {
 
   // Always run at 250 Hz. At 500 Hz, the skip factor should be 2, at 1000 Hz 4.
   if (!(previous_imu_seq_++ % update_skip_factor_ == 0)) {
@@ -275,17 +265,18 @@ void GazeboMavlinkInterface::PreUpdate(const gz::sim::UpdateInfo &_info,
   }
 }
 
-void GazeboMavlinkInterface::PostUpdate(const gz::sim::UpdateInfo &_info,
-    const gz::sim::EntityComponentManager &_ecm) {
+void GazeboMavlinkInterface::PostUpdate(const gz::sim::UpdateInfo& _info,
+                                        const gz::sim::EntityComponentManager& _ecm) {
   // Send back status data (ESCs) after physics update at a certain interval
-  uint64_t current_time = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e3).count();
+  uint64_t current_time =
+      std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e3).count();
   if (current_time - status_last_update_time_ >= status_update_interval_) {
     SendStatusMessages(_info, _ecm);
     status_last_update_time_ = current_time;
   }
 }
 
-void GazeboMavlinkInterface::PoseCallback(const gz::msgs::Pose_V &_msg){
+void GazeboMavlinkInterface::PoseCallback(const gz::msgs::Pose_V& _msg) {
   for (int p = 0; p < _msg.pose_size(); p++) {
     if (_msg.pose(p).name() == model_name_) {
       gz::msgs::Vector3d pose_position = _msg.pose(p).position();
@@ -293,10 +284,7 @@ void GazeboMavlinkInterface::PoseCallback(const gz::msgs::Pose_V &_msg){
 
       // orientation transform
       gz::math::Quaterniond q_gr = gz::math::Quaterniond(
-                    pose_orientation.w(),
-                    pose_orientation.x(),
-                    pose_orientation.y(),
-                    pose_orientation.z());
+          pose_orientation.w(), pose_orientation.x(), pose_orientation.y(), pose_orientation.z());
 
       gz::math::Quaterniond q_nb;
       RotateQuaternion(q_nb, q_gr);
@@ -316,28 +304,24 @@ void GazeboMavlinkInterface::PoseCallback(const gz::msgs::Pose_V &_msg){
       mavlink_message_t msg;
       mavlink_msg_hil_state_quaternion_encode_chan(254, 25, MAVLINK_COMM_0, &msg, &hil_state_quat);
       // Override default global mavlink channel status with instance specific status
-      mavlink_interface_->FinalizeOutgoingMessage(&msg, 254, 25,
-        MAVLINK_MSG_ID_HIL_STATE_QUATERNION_MIN_LEN,
-        MAVLINK_MSG_ID_HIL_STATE_QUATERNION_LEN,
-        MAVLINK_MSG_ID_HIL_STATE_QUATERNION_CRC);
+      mavlink_interface_->FinalizeOutgoingMessage(
+          &msg, 254, 25, MAVLINK_MSG_ID_HIL_STATE_QUATERNION_MIN_LEN,
+          MAVLINK_MSG_ID_HIL_STATE_QUATERNION_LEN, MAVLINK_MSG_ID_HIL_STATE_QUATERNION_CRC);
       mavlink_interface_->PushSendMessage(&msg);
     }
   }
-
-
-
 }
 
-void GazeboMavlinkInterface::ImuCallback(const gz::msgs::IMU &_msg) {
+void GazeboMavlinkInterface::ImuCallback(const gz::msgs::IMU& _msg) {
   const std::lock_guard<std::mutex> lock(last_imu_message_mutex_);
   last_imu_message_ = _msg;
 }
 
-void GazeboMavlinkInterface::BarometerCallback(const gz::msgs::FluidPressure &_msg) {
+void GazeboMavlinkInterface::BarometerCallback(const gz::msgs::FluidPressure& _msg) {
   SensorData::Barometer baro_data;
 
-  const float absolute_pressure = AddSimpleNoise((float) _msg.pressure(), 0, 1.5);
-  const float lapse_rate = 0.0065f; // reduction in temperature with altitude (Kelvin/m)
+  const float absolute_pressure = AddSimpleNoise((float)_msg.pressure(), 0, 1.5);
+  const float lapse_rate = 0.0065f;     // reduction in temperature with altitude (Kelvin/m)
   const float pressure_msl = 101325.0f; // pressure at MSL
   const float temperature_msl = 288.0f; // temperature at MSL (Kelvin)
 
@@ -355,7 +339,8 @@ void GazeboMavlinkInterface::BarometerCallback(const gz::msgs::FluidPressure &_m
   // =>
   const float alt_msl = (temperature_msl - temperature_local) / lapse_rate;
 
-  //gzmsg << "[BarometerCallback] temperature_local: " << temperature_local << " abs_press: " << absolute_pressure << std::endl;
+  // gzmsg << "[BarometerCallback] temperature_local: " << temperature_local << " abs_press: " <<
+  // absolute_pressure << std::endl;
 
   baro_data.temperature = temperature_local - 273.15f;
   baro_data.abs_pressure = absolute_pressure / 100.0f;
@@ -363,23 +348,22 @@ void GazeboMavlinkInterface::BarometerCallback(const gz::msgs::FluidPressure &_m
   mavlink_interface_->UpdateBarometer(baro_data);
 }
 
-void GazeboMavlinkInterface::MagnetometerCallback(const gz::msgs::Magnetometer &_msg) {
+void GazeboMavlinkInterface::MagnetometerCallback(const gz::msgs::Magnetometer& _msg) {
   SensorData::Magnetometer mag_data;
-  mag_data.mag_b = Eigen::Vector3d(
-    AddSimpleNoise(_msg.field_tesla().x(), 0, 0.0001),
-    AddSimpleNoise(_msg.field_tesla().y(), 0, 0.0001),
-    AddSimpleNoise(_msg.field_tesla().z(), 0, 0.0001)
-  );
+  mag_data.mag_b = Eigen::Vector3d(AddSimpleNoise(_msg.field_tesla().x(), 0, 0.0001),
+                                   AddSimpleNoise(_msg.field_tesla().y(), 0, 0.0001),
+                                   AddSimpleNoise(_msg.field_tesla().z(), 0, 0.0001));
   mavlink_interface_->UpdateMag(mag_data);
 }
 
-//void GazeboMavlinkInterface::GpsCallback(const sensor_msgs::msgs::SITLGps &_msg) {
-void GazeboMavlinkInterface::GpsCallback(const gz::msgs::NavSat &_msg) {
-    // fill HIL GPS Mavlink msg
-  //std::cerr << "GpsCallback" << std::endl;
+// void GazeboMavlinkInterface::GpsCallback(const sensor_msgs::msgs::SITLGps &_msg) {
+void GazeboMavlinkInterface::GpsCallback(const gz::msgs::NavSat& _msg) {
+  // fill HIL GPS Mavlink msg
+  // std::cerr << "GpsCallback" << std::endl;
   mavlink_hil_gps_t hil_gps_msg;
   const auto header = _msg.header();
-  hil_gps_msg.time_usec = static_cast<uint64_t>((header.stamp().sec() * 1000000) + (header.stamp().nsec() / 1000));
+  hil_gps_msg.time_usec =
+      static_cast<uint64_t>((header.stamp().sec() * 1000000) + (header.stamp().nsec() / 1000));
   hil_gps_msg.fix_type = 3;
   hil_gps_msg.lat = static_cast<int32_t>(_msg.latitude_deg() * 1e7);
   hil_gps_msg.lon = static_cast<int32_t>(_msg.longitude_deg() * 1e7);
@@ -398,24 +382,22 @@ void GazeboMavlinkInterface::GpsCallback(const gz::msgs::NavSat &_msg) {
   hil_gps_msg.satellites_visible = 10;
   hil_gps_msg.id = 0; // Workaround for mavlink zero trimming feature
 
-  //gzmsg << "[GpsCallback] alt: " << _msg.altitude() << std::endl;
+  // gzmsg << "[GpsCallback] alt: " << _msg.altitude() << std::endl;
 
   // send HIL_GPS Mavlink msg
   mavlink_message_t msg;
   mavlink_msg_hil_gps_encode_chan(254, 25, MAVLINK_COMM_0, &msg, &hil_gps_msg);
   // Override default global mavlink channel status with instance specific status
-  mavlink_interface_->FinalizeOutgoingMessage(&msg, 254, 25,
-    MAVLINK_MSG_ID_HIL_GPS_MIN_LEN,
-    MAVLINK_MSG_ID_HIL_GPS_LEN,
-    MAVLINK_MSG_ID_HIL_GPS_CRC);
+  mavlink_interface_->FinalizeOutgoingMessage(&msg, 254, 25, MAVLINK_MSG_ID_HIL_GPS_MIN_LEN,
+                                              MAVLINK_MSG_ID_HIL_GPS_LEN,
+                                              MAVLINK_MSG_ID_HIL_GPS_CRC);
   mavlink_interface_->PushSendMessage(&msg);
 }
 
-void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo &_info) {
+void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo& _info) {
   const std::lock_guard<std::mutex> lock(last_imu_message_mutex_);
   const gz::msgs::IMU last_imu_message = last_imu_message_;
   last_imu_message_mutex_.unlock();
-
 
   // send always accel and gyro data (not dependent of the bitmask)
   // required so to keep the timestamps on sync and the lockstep can
@@ -431,16 +413,15 @@ void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo &_info
   //   AddSimpleNoise(last_imu_message.angular_velocity().z(), 0, 0.001)));
 
   gz::math::Vector3d accel_b = q_FLU_to_FRD.RotateVector(gz::math::Vector3d(
-    last_imu_message.linear_acceleration().x(),
-    last_imu_message.linear_acceleration().y(),
-    last_imu_message.linear_acceleration().z()));
+      last_imu_message.linear_acceleration().x(), last_imu_message.linear_acceleration().y(),
+      last_imu_message.linear_acceleration().z()));
 
   gz::math::Vector3d gyro_b = q_FLU_to_FRD.RotateVector(gz::math::Vector3d(
-    last_imu_message.angular_velocity().x(),
-    last_imu_message.angular_velocity().y(),
-    last_imu_message.angular_velocity().z()));
+      last_imu_message.angular_velocity().x(), last_imu_message.angular_velocity().y(),
+      last_imu_message.angular_velocity().z()));
 
-  uint64_t time_usec = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
+  uint64_t time_usec =
+      std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
   SensorData::Imu imu_data;
   imu_data.accel_b = Eigen::Vector3d(accel_b.X(), accel_b.Y(), accel_b.Z());
   imu_data.gyro_b = Eigen::Vector3d(gyro_b.X(), gyro_b.Y(), gyro_b.Z());
@@ -448,25 +429,31 @@ void GazeboMavlinkInterface::SendSensorMessages(const gz::sim::UpdateInfo &_info
   mavlink_interface_->SendSensorMessages(time_usec);
 }
 
-void GazeboMavlinkInterface::SendStatusMessages(const gz::sim::UpdateInfo &_info, const gz::sim::EntityComponentManager &_ecm) {
-  uint64_t time_usec = std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
+void GazeboMavlinkInterface::SendStatusMessages(const gz::sim::UpdateInfo& _info,
+                                                const gz::sim::EntityComponentManager& _ecm) {
+  uint64_t time_usec =
+      std::chrono::duration_cast<std::chrono::duration<uint64_t>>(_info.simTime * 1e6).count();
   struct StatusData::EscStatus status;
   std::vector<double> vels;
   char joint_name_c[] = "rotor_0_joint"; // This assumes rotor naming for all model is consistent
-  gz::sim::Entity joint_entity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c), gz::sim::components::Joint());;
+  gz::sim::Entity joint_entity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c),
+                                                         gz::sim::components::Joint());
+  ;
 
   double vel;
   int i = 0;
   while (joint_entity != gz::sim::kNullEntity) {
     // Get velocity component data from joint entity
-    std::optional<std::vector<double>> joint_velocity = _ecm.ComponentData<gz::sim::components::JointVelocity>(joint_entity);
+    std::optional<std::vector<double>> joint_velocity =
+        _ecm.ComponentData<gz::sim::components::JointVelocity>(joint_entity);
     if (joint_velocity && (*joint_velocity).size() > 0) {
       status.esc[i].rpm = (*joint_velocity)[0] * RAD_S_TO_RPM;
     }
     // Get joint entity
     i++;
     joint_name_c[6] = '0' + i;
-    joint_entity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c), gz::sim::components::Joint());
+    joint_entity = _ecm.EntityByComponents(gz::sim::components::Name(joint_name_c),
+                                           gz::sim::components::Joint());
   }
 
   status.esc_count = i;
@@ -474,13 +461,14 @@ void GazeboMavlinkInterface::SendStatusMessages(const gz::sim::UpdateInfo &_info
   mavlink_interface_->SendEscStatusMessages(time_usec, status);
 }
 
-void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo &_info) {
+void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo& _info) {
   bool armed = mavlink_interface_->GetArmedState();
 
   last_actuator_time_ = _info.simTime;
 
   Eigen::VectorXd actuator_controls = mavlink_interface_->GetActuatorControls();
-  if (actuator_controls.size() < n_out_max) return; //TODO: Handle this properly
+  if (actuator_controls.size() < n_out_max)
+    return; // TODO: Handle this properly
 
   // Read Cmd vel input for rover
   if (actuator_controls[n_out_max - 1] != 0.0 || actuator_controls[n_out_max - 2] != 0.0) {
@@ -540,55 +528,44 @@ void GazeboMavlinkInterface::handle_actuator_controls(const gz::sim::UpdateInfo 
   received_first_actuator_ = mavlink_interface_->GetReceivedFirstActuator();
 }
 
-bool GazeboMavlinkInterface::IsRunning()
-{
-  return true; //TODO;
+bool GazeboMavlinkInterface::IsRunning() {
+  return true; // TODO;
 }
 
 void GazeboMavlinkInterface::onSigInt() {
   mavlink_interface_->onSigInt();
 }
 
-// The following snippet was copied from https://github.com/gzrobotics/ign-gazebo/blob/ign-gazebo4/src/systems/multicopter_control/MulticopterVelocityControl.cc
-void GazeboMavlinkInterface::PublishMotorVelocities(
-    gz::sim::EntityComponentManager &_ecm,
-    const Eigen::VectorXd &_vels)
-{
-  if (_vels.size() != motor_velocity_message_.velocity_size())
-  {
+// The following snippet was copied from
+// https://github.com/gzrobotics/ign-gazebo/blob/ign-gazebo4/src/systems/multicopter_control/MulticopterVelocityControl.cc
+void GazeboMavlinkInterface::PublishMotorVelocities(gz::sim::EntityComponentManager& _ecm,
+                                                    const Eigen::VectorXd& _vels) {
+  if (_vels.size() != motor_velocity_message_.velocity_size()) {
     motor_velocity_message_.mutable_velocity()->Resize(_vels.size(), 0);
   }
-  for (int i = 0; i < _vels.size(); ++i)
-  {
+  for (int i = 0; i < _vels.size(); ++i) {
     motor_velocity_message_.set_velocity(i, _vels(i));
   }
   // Publish the message by setting the Actuators component on the model entity.
   // This assumes that the MulticopterMotorModel system is attached to this
   // model
-  auto actuatorMsgComp =
-      _ecm.Component<gz::sim::components::Actuators>(model_.Entity());
+  auto actuatorMsgComp = _ecm.Component<gz::sim::components::Actuators>(model_.Entity());
 
-  if (actuatorMsgComp)
-  {
-    auto compFunc = [](const gz::msgs::Actuators &_a, const gz::msgs::Actuators &_b)
-    {
-      return std::equal(_a.velocity().begin(), _a.velocity().end(),
-                        _b.velocity().begin());
+  if (actuatorMsgComp) {
+    auto compFunc = [](const gz::msgs::Actuators& _a, const gz::msgs::Actuators& _b) {
+      return std::equal(_a.velocity().begin(), _a.velocity().end(), _b.velocity().begin());
     };
     auto state = actuatorMsgComp->SetData(this->motor_velocity_message_, compFunc)
                      ? gz::sim::ComponentState::PeriodicChange
                      : gz::sim::ComponentState::NoChange;
     _ecm.SetChanged(model_.Entity(), gz::sim::components::Actuators::typeId, state);
-  }
-  else
-  {
+  } else {
     _ecm.CreateComponent(model_.Entity(),
                          gz::sim::components::Actuators(this->motor_velocity_message_));
   }
 }
 
-void GazeboMavlinkInterface::PublishServoVelocities(const Eigen::VectorXd &_vels)
-{
+void GazeboMavlinkInterface::PublishServoVelocities(const Eigen::VectorXd& _vels) {
   for (int i = 0; i < _vels.size(); i++) {
     gz::msgs::Double servo_input;
     servo_input.set_data(_vels(i));
@@ -596,8 +573,7 @@ void GazeboMavlinkInterface::PublishServoVelocities(const Eigen::VectorXd &_vels
   }
 }
 
-void GazeboMavlinkInterface::PublishCmdVelocities(const float _thrust, const float _torque)
-{
+void GazeboMavlinkInterface::PublishCmdVelocities(const float _thrust, const float _torque) {
   gz::msgs::Twist cmd_vel_message;
   cmd_vel_message.mutable_linear()->set_x(_thrust);
   cmd_vel_message.mutable_angular()->set_z(_torque);
@@ -607,17 +583,17 @@ void GazeboMavlinkInterface::PublishCmdVelocities(const float _thrust, const flo
   }
 }
 
-bool GazeboMavlinkInterface::resolveHostName()
-{
+bool GazeboMavlinkInterface::resolveHostName() {
   if (!mavlink_hostname_str_.empty()) {
-    gzmsg << "Try to resolve hostname: '"  << mavlink_hostname_str_ << "'" << std::endl;
+    gzmsg << "Try to resolve hostname: '" << mavlink_hostname_str_ << "'" << std::endl;
     hostptr_ = gethostbyname(mavlink_hostname_str_.c_str());
     if (hostptr_ && hostptr_->h_length && hostptr_->h_addrtype == AF_INET) {
-      struct in_addr **addr_l = (struct in_addr **)hostptr_->h_addr_list;
-      char *addr_str = inet_ntoa(*addr_l[0]);
+      struct in_addr** addr_l = (struct in_addr**)hostptr_->h_addr_list;
+      char* addr_str = inet_ntoa(*addr_l[0]);
       std::string ip_addr = std::string(addr_str);
       mavlink_interface_->SetMavlinkAddr(ip_addr);
-      gzmsg << "Host name '" << mavlink_hostname_str_ << "' resolved to IP: " << ip_addr << std::endl;
+      gzmsg << "Host name '" << mavlink_hostname_str_ << "' resolved to IP: " << ip_addr
+            << std::endl;
       return true;
     }
     return false;
@@ -625,11 +601,9 @@ bool GazeboMavlinkInterface::resolveHostName()
     // Assume resolved in case hostname is not given at all
     return true;
   }
-
 }
 
-void GazeboMavlinkInterface::ResolveWorker()
-{
+void GazeboMavlinkInterface::ResolveWorker() {
   gzmsg << "[ResolveWorker] Start Resolving hostname" << std::endl;
   while (!resolveHostName()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -644,63 +618,54 @@ float GazeboMavlinkInterface::AddSimpleNoise(float value, float mean, float stdd
   return value + dist(rnd_gen_);
 }
 
-void GazeboMavlinkInterface::RotateQuaternion(gz::math::Quaterniond &q_FRD_to_NED,
-    const gz::math::Quaterniond q_FLU_to_ENU)
-{
-	// FLU (ROS) to FRD (PX4) static rotation
-	static const auto q_FLU_to_FRD = gz::math::Quaterniond(0, 1, 0, 0);
+void GazeboMavlinkInterface::RotateQuaternion(gz::math::Quaterniond& q_FRD_to_NED,
+                                              const gz::math::Quaterniond q_FLU_to_ENU) {
+  // FLU (ROS) to FRD (PX4) static rotation
+  static const auto q_FLU_to_FRD = gz::math::Quaterniond(0, 1, 0, 0);
 
-	/**
-	 * @brief Quaternion for rotation between ENU and NED frames
-	 *
-	 * NED to ENU: +PI/2 rotation about Z (Down) followed by a +PI rotation around X (old North/new East)
-	 * ENU to NED: +PI/2 rotation about Z (Up) followed by a +PI rotation about X (old East/new North)
-	 * This rotation is symmetric, so q_ENU_to_NED == q_NED_to_ENU.
-	 */
-	static const auto q_ENU_to_NED = gz::math::Quaterniond(0, 0.70711, 0.70711, 0);
+  /**
+   * @brief Quaternion for rotation between ENU and NED frames
+   *
+   * NED to ENU: +PI/2 rotation about Z (Down) followed by a +PI rotation around X (old North/new
+   * East) ENU to NED: +PI/2 rotation about Z (Up) followed by a +PI rotation about X (old East/new
+   * North) This rotation is symmetric, so q_ENU_to_NED == q_NED_to_ENU.
+   */
+  static const auto q_ENU_to_NED = gz::math::Quaterniond(0, 0.70711, 0.70711, 0);
 
-	// final rotation composition
-	q_FRD_to_NED = q_ENU_to_NED * q_FLU_to_ENU * q_FLU_to_FRD.Inverse();
+  // final rotation composition
+  q_FRD_to_NED = q_ENU_to_NED * q_FLU_to_ENU * q_FLU_to_FRD.Inverse();
 }
 
-void GazeboMavlinkInterface::ParseMulticopterMotorModelPlugins(const std::string &sdfFilePath)
-{
+void GazeboMavlinkInterface::ParseMulticopterMotorModelPlugins(const std::string& sdfFilePath) {
   // Load the SDF file
   sdf::Root root;
   sdf::Errors errors = root.Load(sdfFilePath);
-  if (!errors.empty())
-  {
-    for (const auto &error : errors)
-    {
+  if (!errors.empty()) {
+    for (const auto& error : errors) {
       gzerr << "[gazebo_mavlink_interface] Error: " << error.Message() << std::endl;
     }
     return;
   }
 
   // Load the model
-  const sdf::Model *model = root.Model();
-  if (!model)
-  {
+  const sdf::Model* model = root.Model();
+  if (!model) {
     gzerr << "[gazebo_mavlink_interface] No models found in SDF file." << std::endl;
     return;
   }
 
   // Iterate through all plugins in the model
-  for (const sdf::Plugin plugin : model->Plugins())
-  {
+  for (const sdf::Plugin plugin : model->Plugins()) {
     // Check if the plugin is a MulticopterMotorModel
     if (plugin.Name() == "gz::sim::systems::MulticopterMotorModel") {
-      if (plugin.Element()->HasElement("motorNumber"))
-      {
+      if (plugin.Element()->HasElement("motorNumber")) {
         const int motorNumber = plugin.Element()->Get<int>("motorNumber");
-        if (motorNumber >= n_out_max)
-        {
+        if (motorNumber >= n_out_max) {
           gzerr << "[gazebo_mavlink_interface] Motor number " << motorNumber
-            << " exceeds maximum number of motors " << n_out_max << std::endl;
+                << " exceeds maximum number of motors " << n_out_max << std::endl;
           continue;
         }
-        if (plugin.Element()->HasElement("motorNumber"))
-        {
+        if (plugin.Element()->HasElement("motorNumber")) {
           motor_vel_scalings_[motorNumber] = plugin.Element()->Get<double>("maxRotVelocity");
         }
       }

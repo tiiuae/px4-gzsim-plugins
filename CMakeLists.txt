@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10.2 FATAL_ERROR)
 project(mavlink_hitl_gazebosim)
 
+set(DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
+
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(Boost 1.58 REQUIRED COMPONENTS system thread filesystem)
@@ -34,7 +37,40 @@ include_directories(
 )
 
 add_library(mavlink_hitl_gazebosim SHARED src/gazebo_mavlink_interface.cpp src/mavlink_interface.cpp)
+#########################################################################
+add_library(vibration_plugin SHARED src/gazebo_vibration_plugin.cpp)
+add_library(parachute_plugin SHARED src/gazebo_parachute_plugin.cpp)
+#########################################################################
 set_property(TARGET mavlink_hitl_gazebosim PROPERTY CXX_STANDARD 17)
+set_property(TARGET vibration_plugin PROPERTY CXX_STANDARD 17)
+set_property(TARGET parachute_plugin PROPERTY CXX_STANDARD 17)
+
+
+#########################################################################
+
+# Replace the global include_directories usage with target-scoped include dirs:
+target_include_directories(mavlink_hitl_gazebosim
+  PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}                # if generated headers live in build
+    ${Boost_INCLUDE_DIR}               # Boost include variable
+    ${MAVLINK_INCLUDE_DIRS}            # MAVLink include paths (from find_package)
+)
+
+target_include_directories(vibration_plugin
+  PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${Boost_INCLUDE_DIR}
+)
+
+target_include_directories(parachute_plugin
+  PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${Boost_INCLUDE_DIR}
+)
+#########################################################################
+
+
 target_link_libraries(mavlink_hitl_gazebosim
   PRIVATE ${Boost_LIBRARIES}
   PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
@@ -42,9 +78,21 @@ target_link_libraries(mavlink_hitl_gazebosim
   PRIVATE gz-sensors8::gz-sensors8
 )
 
+target_link_libraries(vibration_plugin
+  PRIVATE ${Boost_LIBRARIES}
+  PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
+  PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION})
+
+target_link_libraries(parachute_plugin
+  PRIVATE ${Boost_LIBRARIES}
+  PRIVATE gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
+  PRIVATE gz-sim${GAZEBO_VERSION}::gz-sim${GAZEBO_VERSION})
+
 include(GNUInstallDirs)
 install(TARGETS
   mavlink_hitl_gazebosim
+  vibration_plugin
+  parachute_plugin
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 
